@@ -107,7 +107,8 @@ Auth behavior:
 
 - Public email/password sign-up is disabled.
 - The initial admin user is seeded from `.env`.
-- Default local seed credentials are `admin@example.com` / `password123`.
+- The seed script rejects known weak bootstrap passwords by default.
+- Use `ALLOW_INSECURE_BOOTSTRAP_PASSWORD=true` only for local throwaway development.
 - Better Auth is mounted under `/api/auth`.
 - The frontend uses `window.location.origin` with `basePath: "/api/auth"`, so local browser auth calls go through the Vite proxy.
 - Sessions are stored in the database and sent via the `better-auth.session_token` cookie.

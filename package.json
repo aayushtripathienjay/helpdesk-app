@@ -12,9 +12,13 @@
     "dev:web": "bun --filter @helpdesk/web dev",
     "build": "bun --filter '*' build",
     "typecheck": "bun --filter '*' typecheck",
-    "lint": "bun --filter '*' lint"
+    "lint": "bun --filter '*' lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install chromium"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/bun": "^1.2.0",
     "typescript": "^5.7.3"
   }

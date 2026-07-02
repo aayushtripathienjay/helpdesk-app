@@ -18,12 +18,15 @@ const configuredWebOrigins = [
   ...(parseOrigins(process.env.WEB_ORIGINS) ?? [])
 ].filter(Boolean) as string[];
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export const config = {
+  isProduction,
   port: Number(process.env.API_PORT ?? 3000),
   webOrigins: Array.from(
     new Set([
       ...configuredWebOrigins,
-      ...(process.env.NODE_ENV === "production" ? [] : localWebOrigins)
+      ...(isProduction ? [] : localWebOrigins)
     ])
   )
 };

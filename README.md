@@ -53,6 +53,11 @@ Seed the initial admin user from `.env`:
 bun --filter @helpdesk/api db:seed
 ```
 
+Use a strong `ADMIN_PASSWORD`. Known example passwords such as `password123`
+are rejected by default. For local-only throwaway development, you can set
+`ALLOW_INSECURE_BOOTSTRAP_PASSWORD=true`, but do not use that in shared or
+deployed environments.
+
 Start both apps:
 
 ```sh
@@ -119,6 +124,7 @@ The main local variables are defined in `.env.example`:
 - `BETTER_AUTH_URL` - API base URL for Better Auth
 - `ADMIN_EMAIL` - seeded admin email
 - `ADMIN_PASSWORD` - seeded admin password
+- `ALLOW_INSECURE_BOOTSTRAP_PASSWORD` - optional local-only override for weak seed passwords
 - `ADMIN_NAME` - seeded admin name
 - `API_PORT` - Express API port
 - `WEB_ORIGIN` - allowed frontend origin

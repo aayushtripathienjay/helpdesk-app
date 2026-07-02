@@ -6,6 +6,16 @@ import { prisma } from "../db/prisma";
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
 const adminName = process.env.ADMIN_NAME ?? "Admin";
+const allowInsecureBootstrapPassword =
+  process.env.ALLOW_INSECURE_BOOTSTRAP_PASSWORD === "true";
+const insecureBootstrapPasswords = new Set([
+  "password",
+  "password123",
+  "admin",
+  "admin123",
+  "changeme",
+  "replace-with-a-long-random-secret"
+]);
 
 if (!adminEmail || !adminPassword) {
   console.error("ADMIN_EMAIL and ADMIN_PASSWORD must be set.");
@@ -14,6 +24,16 @@ if (!adminEmail || !adminPassword) {
 
 if (adminPassword.length < 8) {
   console.error("ADMIN_PASSWORD must be at least 8 characters.");
+  process.exit(1);
+}
+
+if (
+  insecureBootstrapPasswords.has(adminPassword.toLowerCase()) &&
+  !allowInsecureBootstrapPassword
+) {
+  console.error(
+    "ADMIN_PASSWORD uses a known insecure bootstrap value. Set a strong password or explicitly set ALLOW_INSECURE_BOOTSTRAP_PASSWORD=true for local-only development."
+  );
   process.exit(1);
 }
 

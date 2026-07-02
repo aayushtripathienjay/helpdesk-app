@@ -3,6 +3,7 @@ import express from "express";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { auth } from "./auth";
 import { config } from "./config";
+import { requireAuth } from "./middleware/auth";
 import { healthRouter } from "./routes/health";
 import { ticketsRouter } from "./routes/tickets";
 
@@ -31,9 +32,9 @@ app.get("/", (_request, response) => {
 });
 
 app.use("/health", healthRouter);
-app.use("/tickets", ticketsRouter);
+app.use("/tickets", requireAuth, ticketsRouter);
 app.use("/api/health", healthRouter);
-app.use("/api/tickets", ticketsRouter);
+app.use("/api/tickets", requireAuth, ticketsRouter);
 
 app.get("/api/me", async (request, response) => {
   const session = await auth.api.getSession({
