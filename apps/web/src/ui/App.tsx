@@ -17,6 +17,7 @@ import {
   listUsers,
   updateUser,
   type HelpdeskUser,
+  UserApiError,
   type UserRole
 } from "../api/users";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -73,15 +74,28 @@ type SessionUser = {
   isActive?: boolean | null;
 };
 
-type UserFormState = {
-  name: string;
-  email: string;
-  password: string;
-  role: UserRole;
-  isActive: boolean;
-};
+const baseUserFormSchema = z.object({
+  name: z.string().trim().min(1, "Enter a name"),
+  email: z.email("Enter a valid email address"),
+  password: z
+    .string()
+    .refine(
+      (value) => value.length === 0 || value.length >= 8,
+      "Password must be at least 8 characters"
+    ),
+  role: z.enum(["admin", "agent"]),
+  isActive: z.boolean()
+});
 
-const emptyUserForm: UserFormState = {
+const createUserFormSchema = baseUserFormSchema.extend({
+  password: z.string().min(8, "Minimum 8 characters")
+});
+
+const editUserFormSchema = baseUserFormSchema;
+
+type UserFormValues = z.infer<typeof baseUserFormSchema>;
+
+const emptyUserForm: UserFormValues = {
   name: "",
   email: "",
   password: "",
@@ -480,10 +494,26 @@ function UsersPage() {
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
-  const [form, setForm] = useState<UserFormState>(emptyUserForm);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const {
+    formState: { errors: userFormErrors },
+    handleSubmit: handleUserSubmit,
+    register: registerUserField,
+    reset: resetUserForm,
+    setError: setUserFormError,
+    setValue: setUserFormValue,
+    watch: watchUserForm
+  } = useForm<UserFormValues>({
+    resolver: (...resolverArgs) =>
+      zodResolver(editingUserId ? editUserFormSchema : createUserFormSchema)(
+        ...resolverArgs
+      ),
+    defaultValues: emptyUserForm
+  });
+  const selectedRole = watchUserForm("role");
+  const isActiveValue = watchUserForm("isActive");
   const {
     data: users = [],
     error: usersError,
@@ -527,48 +557,37 @@ function UsersPage() {
   const isDeactivating = deactivateUserMutation.isPending;
   const loadError = getErrorMessage(usersError, "Failed to load users");
 
-  function updateForm<Value extends keyof UserFormState>(
-    key: Value,
-    value: UserFormState[Value]
-  ) {
-    setForm((current) => ({
-      ...current,
-      [key]: value
-    }));
-  }
-
   function resetForm() {
-    setForm(emptyUserForm);
+    resetUserForm(emptyUserForm);
     setEditingUserId(null);
-    setError(null);
+    setActionError(null);
   }
 
   function editUser(selectedUser: HelpdeskUser) {
     setEditingUserId(selectedUser.id);
-    setForm({
+    resetUserForm({
       name: selectedUser.name,
       email: selectedUser.email,
       password: "",
       role: selectedUser.role,
       isActive: selectedUser.isActive
     });
-    setError(null);
+    setActionError(null);
     setMessage(null);
   }
 
-  async function saveUser(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
+  async function saveUser(values: UserFormValues) {
+    setActionError(null);
     setMessage(null);
 
     try {
       if (editingUserId) {
         const payload = {
-          name: form.name,
-          email: form.email,
-          role: form.role,
-          isActive: form.isActive,
-          ...(form.password ? { password: form.password } : {})
+          name: values.name,
+          email: values.email,
+          role: values.role,
+          isActive: values.isActive,
+          ...(values.password ? { password: values.password } : {})
         };
         await updateUserMutation.mutateAsync({
           userId: editingUserId,
@@ -576,15 +595,22 @@ function UsersPage() {
         });
       } else {
         await createUserMutation.mutateAsync({
-          name: form.name,
-          email: form.email,
-          password: form.password,
-          role: form.role,
+          name: values.name,
+          email: values.email,
+          password: values.password,
+          role: values.role,
           isActive: true
         });
       }
     } catch (caughtError) {
-      setError(
+      if (caughtError instanceof UserApiError && caughtError.field) {
+        setUserFormError(caughtError.field, {
+          message: caughtError.message
+        });
+        return;
+      }
+
+      setActionError(
         caughtError instanceof Error ? caughtError.message : "Failed to save user"
       );
     }
@@ -592,17 +618,17 @@ function UsersPage() {
 
   async function handleDeactivate(selectedUser: HelpdeskUser) {
     if (selectedUser.id === user?.id) {
-      setError("You cannot deactivate your own account.");
+      setActionError("You cannot deactivate your own account.");
       return;
     }
 
-    setError(null);
+    setActionError(null);
     setMessage(null);
 
     try {
       await deactivateUserMutation.mutateAsync(selectedUser.id);
     } catch (caughtError) {
-      setError(
+      setActionError(
         caughtError instanceof Error
           ? caughtError.message
           : "Failed to deactivate user"
@@ -637,31 +663,47 @@ function UsersPage() {
                   : "Add an admin or support agent."}
               </CardDescription>
             </CardHeader>
-            <form autoComplete="off" onSubmit={saveUser}>
+            <form autoComplete="off" onSubmit={handleUserSubmit(saveUser)}>
               <CardContent className="space-y-4 p-4">
                 <div className="space-y-2">
                   <Label htmlFor="user-name">Name</Label>
                   <Input
                     autoComplete="off"
+                    aria-invalid={userFormErrors.name ? "true" : "false"}
+                    className={cn(
+                      userFormErrors.name &&
+                        "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
+                    )}
                     id="user-name"
-                    name="helpdesk-user-display-name"
-                    onChange={(event) => updateForm("name", event.target.value)}
-                    required
-                    value={form.name}
+                    placeholder="Full name"
+                    {...registerUserField("name")}
                   />
+                  {userFormErrors.name ? (
+                    <p className="text-sm text-destructive">
+                      {userFormErrors.name.message}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="user-email">Email</Label>
                   <Input
                     autoComplete="off"
+                    aria-invalid={userFormErrors.email ? "true" : "false"}
+                    className={cn(
+                      userFormErrors.email &&
+                        "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
+                    )}
                     id="user-email"
-                    name="helpdesk-user-email"
-                    onChange={(event) => updateForm("email", event.target.value)}
-                    required
+                    placeholder="user@example.com"
                     type="email"
-                    value={form.email}
+                    {...registerUserField("email")}
                   />
+                  {userFormErrors.email ? (
+                    <p className="text-sm text-destructive">
+                      {userFormErrors.email.message}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
@@ -670,24 +712,37 @@ function UsersPage() {
                   </Label>
                   <Input
                     autoComplete="new-password"
+                    aria-invalid={userFormErrors.password ? "true" : "false"}
+                    className={cn(
+                      userFormErrors.password &&
+                        "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
+                    )}
                     id="user-password"
-                    minLength={8}
-                    name="helpdesk-user-new-password"
-                    onChange={(event) =>
-                      updateForm("password", event.target.value)
+                    placeholder={
+                      editingUserId
+                        ? "Leave blank to keep current"
+                        : "Minimum 8 characters"
                     }
-                    placeholder={editingUserId ? "Leave blank to keep current" : ""}
-                    required={!editingUserId}
                     type="password"
-                    value={form.password}
+                    {...registerUserField("password")}
                   />
+                  {userFormErrors.password ? (
+                    <p className="text-sm text-destructive">
+                      {userFormErrors.password.message}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="user-role">Role</Label>
                   <Select
-                    onValueChange={(value) => updateForm("role", value as UserRole)}
-                    value={form.role}
+                    onValueChange={(value) =>
+                      setUserFormValue("role", value as UserRole, {
+                        shouldDirty: true,
+                        shouldValidate: true
+                      })
+                    }
+                    value={selectedRole}
                   >
                     <SelectTrigger id="user-role">
                       <SelectValue placeholder="Select role" />
@@ -702,10 +757,13 @@ function UsersPage() {
                 {editingUserId ? (
                   <label className="flex items-center gap-2 text-sm">
                     <input
-                      checked={form.isActive}
+                      checked={isActiveValue}
                       disabled={editingUserId === user?.id}
                       onChange={(event) =>
-                        updateForm("isActive", event.target.checked)
+                        setUserFormValue("isActive", event.target.checked, {
+                          shouldDirty: true,
+                          shouldValidate: true
+                        })
                       }
                       type="checkbox"
                     />
@@ -713,10 +771,10 @@ function UsersPage() {
                   </label>
                 ) : null}
 
-                {error ? (
+                {actionError ? (
                   <Alert variant="destructive">
-                    <AlertTitle>User action failed</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
+                    <AlertTitle>Unable to save user</AlertTitle>
+                    <AlertDescription>{actionError}</AlertDescription>
                   </Alert>
                 ) : null}
 

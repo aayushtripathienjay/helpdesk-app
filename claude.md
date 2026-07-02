@@ -139,6 +139,7 @@ If it is missing, Better Auth rejects browser sign-in with `Invalid origin`.
 - Do not add component-level `useEffect` fetch flows for API data when the data can be represented as a query.
 - After create, update, or delete actions, invalidate the related query key instead of manually re-fetching and storing duplicate local state.
 - Keep Better Auth session handling on the Better Auth client hooks unless the auth flow itself needs a dedicated API helper.
+- Use React Hook Form with Zod schemas for forms, including adding or editing users.
 
 ## Component Tests
 

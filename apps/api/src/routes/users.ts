@@ -6,6 +6,7 @@ import { auth } from "../auth";
 import { prisma } from "../db/prisma";
 
 export const usersRouter = Router();
+export const userRoutes = Router();
 
 const userSelect = {
   id: true,
@@ -149,7 +150,10 @@ usersRouter.post("/", async (request, response) => {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      response.status(409).json({ error: "A user with that email already exists" });
+      response.status(409).json({
+        error: "Email already exists",
+        field: "email"
+      });
       return;
     }
 
@@ -226,7 +230,10 @@ usersRouter.patch("/:userId", async (request, response) => {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      response.status(409).json({ error: "A user with that email already exists" });
+      response.status(409).json({
+        error: "Email already exists",
+        field: "email"
+      });
       return;
     }
 
@@ -268,4 +275,15 @@ usersRouter.delete("/:userId", async (request, response) => {
 
     throw error;
   }
+});
+
+userRoutes.use("/users", usersRouter);
+userRoutes.use("/api/users", usersRouter);
+
+userRoutes.get("/api/me", async (request, response) => {
+  const session = await auth.api.getSession({
+    headers: fromNodeHeaders(request.headers)
+  });
+
+  response.json({ data: session });
 });

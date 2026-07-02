@@ -7,17 +7,31 @@ import {
   deactivateUser,
   listUsers,
   updateUser,
+  UserApiError,
   type HelpdeskUser
 } from "../api/users";
 import { renderWithQuery } from "../test/render-with-query";
 
-const mocks = vi.hoisted(() => ({
-  createUser: vi.fn(),
-  deactivateUser: vi.fn(),
-  listUsers: vi.fn(),
-  signOut: vi.fn(),
-  updateUser: vi.fn()
-}));
+const mocks = vi.hoisted(() => {
+  class MockUserApiError extends Error {
+    field?: string;
+
+    constructor(message: string, field?: string) {
+      super(message);
+      this.name = "UserApiError";
+      this.field = field;
+    }
+  }
+
+  return {
+    createUser: vi.fn(),
+    deactivateUser: vi.fn(),
+    listUsers: vi.fn(),
+    signOut: vi.fn(),
+    updateUser: vi.fn(),
+    UserApiError: MockUserApiError
+  };
+});
 
 vi.mock("../api/auth", () => ({
   authClient: {
@@ -41,7 +55,8 @@ vi.mock("../api/users", () => ({
   createUser: mocks.createUser,
   deactivateUser: mocks.deactivateUser,
   listUsers: mocks.listUsers,
-  updateUser: mocks.updateUser
+  updateUser: mocks.updateUser,
+  UserApiError: mocks.UserApiError
 }));
 
 const adminUser: HelpdeskUser = {
@@ -114,6 +129,122 @@ describe("Users page", () => {
     renderUsersPage();
 
     expect(await screen.findByText("Failed to load test users")).toBeVisible();
+  });
+
+  test("validates required create-user fields", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    await screen.findByText("admin@example.com");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    expect(await screen.findByText("Enter a name")).toBeVisible();
+    expect(screen.getByText("Enter a valid email address")).toBeVisible();
+    expect(screen.getByText("Minimum 8 characters")).toBeVisible();
+    expect(vi.mocked(createUser)).not.toHaveBeenCalled();
+  });
+
+  test("creates a user with the default agent role", async () => {
+    const createdUser: HelpdeskUser = {
+      ...agentUser,
+      id: "agent-2",
+      name: "New Agent",
+      email: "new.agent@example.com"
+    };
+    vi.mocked(listUsers).mockResolvedValue([adminUser]);
+    vi.mocked(createUser).mockResolvedValue(createdUser);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    await screen.findByText("admin@example.com");
+    await user.type(screen.getByLabelText("Name"), "New Agent");
+    await user.type(screen.getByLabelText("Email"), "new.agent@example.com");
+    await user.type(screen.getByLabelText("Password"), "password@123");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(createUser).mock.calls[0]?.[0]).toEqual({
+        email: "new.agent@example.com",
+        isActive: true,
+        name: "New Agent",
+        password: "password@123",
+        role: "agent"
+      });
+    });
+    expect(await screen.findByText("User created.")).toBeVisible();
+  });
+
+  test("validates minimum password length before creating a user", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    await screen.findByText("admin@example.com");
+    await user.type(screen.getByLabelText("Name"), "New Agent");
+    await user.type(screen.getByLabelText("Email"), "new.agent@example.com");
+    await user.type(screen.getByLabelText("Password"), "short");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    expect(await screen.findByText("Minimum 8 characters")).toBeVisible();
+    expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid", "true");
+    expect(vi.mocked(createUser)).not.toHaveBeenCalled();
+  });
+
+  test("creates an admin user when the admin role is selected", async () => {
+    const createdAdmin: HelpdeskUser = {
+      ...agentUser,
+      id: "admin-2",
+      name: "New Admin",
+      email: "new.admin@example.com",
+      role: "admin"
+    };
+    vi.mocked(listUsers).mockResolvedValue([adminUser]);
+    vi.mocked(createUser).mockResolvedValue(createdAdmin);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    await screen.findByText("admin@example.com");
+    await user.type(screen.getByLabelText("Name"), "New Admin");
+    await user.type(screen.getByLabelText("Email"), "new.admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password@123");
+    await user.click(screen.getByLabelText("Role"));
+    await user.click(await screen.findByRole("option", { name: "Admin" }));
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(createUser).mock.calls[0]?.[0]).toEqual({
+        email: "new.admin@example.com",
+        isActive: true,
+        name: "New Admin",
+        password: "password@123",
+        role: "admin"
+      });
+    });
+  });
+
+  test("marks email as invalid when the API returns an email field error", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser]);
+    vi.mocked(createUser).mockRejectedValue(
+      new UserApiError("Email already exists", "email")
+    );
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    await screen.findByText("admin@example.com");
+    await user.type(screen.getByLabelText("Name"), "Existing User");
+    await user.type(screen.getByLabelText("Email"), "agent@example.com");
+    await user.type(screen.getByLabelText("Password"), "password@123");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    expect(await screen.findByText("Email already exists")).toBeVisible();
+    expect(screen.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Unable to save user")).not.toBeInTheDocument();
   });
 
   test("refreshes the users query from the refresh button", async () => {

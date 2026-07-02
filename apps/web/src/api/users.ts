@@ -21,13 +21,32 @@ type UserPayload = {
   password?: string;
 };
 
+export type UserApiErrorField = keyof UserPayload;
+
+export class UserApiError extends Error {
+  field?: UserApiErrorField;
+
+  constructor(message: string, field?: UserApiErrorField) {
+    super(message);
+    this.name = "UserApiError";
+    this.field = field;
+  }
+}
+
 function readError(error: unknown) {
   if (axios.isAxiosError(error)) {
-    const payload = error.response?.data as { error?: string } | undefined;
-    return payload?.error ?? "Something went wrong";
+    const payload = error.response?.data as
+      | { error?: string; field?: UserApiErrorField }
+      | undefined;
+    return {
+      field: payload?.field,
+      message: payload?.error ?? "Something went wrong"
+    };
   }
 
-  return "Something went wrong";
+  return {
+    message: "Something went wrong"
+  };
 }
 
 export async function listUsers(): Promise<HelpdeskUser[]> {
@@ -38,7 +57,8 @@ export async function listUsers(): Promise<HelpdeskUser[]> {
 
     return response.data.data;
   } catch (error) {
-    throw new Error(readError(error));
+    const apiError = readError(error);
+    throw new UserApiError(apiError.message, apiError.field);
   }
 }
 
@@ -50,7 +70,8 @@ export async function createUser(payload: Required<UserPayload>) {
 
     return response.data.data;
   } catch (error) {
-    throw new Error(readError(error));
+    const apiError = readError(error);
+    throw new UserApiError(apiError.message, apiError.field);
   }
 }
 
@@ -64,7 +85,8 @@ export async function updateUser(userId: string, payload: UserPayload) {
 
     return response.data.data;
   } catch (error) {
-    throw new Error(readError(error));
+    const apiError = readError(error);
+    throw new UserApiError(apiError.message, apiError.field);
   }
 }
 
@@ -77,6 +99,7 @@ export async function deactivateUser(userId: string) {
 
     return response.data.data;
   } catch (error) {
-    throw new Error(readError(error));
+    const apiError = readError(error);
+    throw new UserApiError(apiError.message, apiError.field);
   }
 }

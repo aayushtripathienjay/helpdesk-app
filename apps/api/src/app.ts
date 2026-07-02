@@ -1,12 +1,12 @@
 import cors from "cors";
 import express from "express";
-import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth";
 import { config } from "./config";
 import { requireAuth } from "./middleware/auth";
 import { healthRouter } from "./routes/health";
 import { ticketsRouter } from "./routes/tickets";
-import { usersRouter } from "./routes/users";
+import { userRoutes } from "./routes/users";
 
 export const app = express();
 
@@ -27,25 +27,18 @@ app.get("/", (_request, response) => {
     service: "helpdesk-api",
     endpoints: {
       health: "/api/health",
-      tickets: "/api/tickets"
+      tickets: "/api/tickets",
+      users: "/api/users",
+      me: "/api/me"
     }
   });
 });
 
 app.use("/health", healthRouter);
 app.use("/tickets", requireAuth, ticketsRouter);
-app.use("/users", usersRouter);
 app.use("/api/health", healthRouter);
 app.use("/api/tickets", requireAuth, ticketsRouter);
-app.use("/api/users", usersRouter);
-
-app.get("/api/me", async (request, response) => {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(request.headers)
-  });
-
-  response.json({ data: session });
-});
+app.use(userRoutes);
 
 app.use((_request, response) => {
   response.status(404).json({ error: "Not found" });
