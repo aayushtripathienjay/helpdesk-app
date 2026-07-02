@@ -32,6 +32,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -81,9 +88,6 @@ const emptyUserForm: UserFormState = {
   role: "agent",
   isActive: true
 };
-
-const selectClassName =
-  "mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 function getSessionUser(session: unknown): SessionUser | null {
   if (!session || typeof session !== "object" || !("user" in session)) {
@@ -400,21 +404,33 @@ function DashboardPage() {
             <CardContent className="space-y-4 p-4">
               <div>
                 <Label htmlFor="status-filter">Status</Label>
-                <select className={selectClassName} id="status-filter">
-                  <option>All statuses</option>
-                  <option>Open</option>
-                  <option>Resolved</option>
-                  <option>Closed</option>
-                </select>
+                <Select defaultValue="all">
+                  <SelectTrigger className="mt-2" id="status-filter">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="category-filter">Category</Label>
-                <select className={selectClassName} id="category-filter">
-                  <option>All categories</option>
-                  <option>General question</option>
-                  <option>Technical question</option>
-                  <option>Refund request</option>
-                </select>
+                <Select defaultValue="all">
+                  <SelectTrigger className="mt-2" id="category-filter">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    <SelectItem value="general_question">General question</SelectItem>
+                    <SelectItem value="technical_question">
+                      Technical question
+                    </SelectItem>
+                    <SelectItem value="refund_request">Refund request</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -621,12 +637,14 @@ function UsersPage() {
                   : "Add an admin or support agent."}
               </CardDescription>
             </CardHeader>
-            <form onSubmit={saveUser}>
+            <form autoComplete="off" onSubmit={saveUser}>
               <CardContent className="space-y-4 p-4">
                 <div className="space-y-2">
                   <Label htmlFor="user-name">Name</Label>
                   <Input
+                    autoComplete="off"
                     id="user-name"
+                    name="helpdesk-user-display-name"
                     onChange={(event) => updateForm("name", event.target.value)}
                     required
                     value={form.name}
@@ -636,7 +654,9 @@ function UsersPage() {
                 <div className="space-y-2">
                   <Label htmlFor="user-email">Email</Label>
                   <Input
+                    autoComplete="off"
                     id="user-email"
+                    name="helpdesk-user-email"
                     onChange={(event) => updateForm("email", event.target.value)}
                     required
                     type="email"
@@ -649,8 +669,10 @@ function UsersPage() {
                     {editingUserId ? "New password" : "Password"}
                   </Label>
                   <Input
+                    autoComplete="new-password"
                     id="user-password"
                     minLength={8}
+                    name="helpdesk-user-new-password"
                     onChange={(event) =>
                       updateForm("password", event.target.value)
                     }
@@ -663,17 +685,18 @@ function UsersPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="user-role">Role</Label>
-                  <select
-                    className={selectClassName}
-                    id="user-role"
-                    onChange={(event) =>
-                      updateForm("role", event.target.value as UserRole)
-                    }
+                  <Select
+                    onValueChange={(value) => updateForm("role", value as UserRole)}
                     value={form.role}
                   >
-                    <option value="agent">Agent</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                    <SelectTrigger id="user-role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {editingUserId ? (

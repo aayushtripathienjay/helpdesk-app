@@ -140,6 +140,38 @@ If it is missing, Better Auth rejects browser sign-in with `Invalid origin`.
 - After create, update, or delete actions, invalidate the related query key instead of manually re-fetching and storing duplicate local state.
 - Keep Better Auth session handling on the Better Auth client hooks unless the auth flow itself needs a dedicated API helper.
 
+## Component Tests
+
+Frontend component tests use Vitest, React Testing Library, jsdom, and
+`@testing-library/jest-dom`.
+
+Test files should live near the component or route they cover, using the
+`*.test.tsx` suffix. For component tests that need React Router and TanStack
+Query, use `apps/web/src/test/render-with-query.tsx` instead of creating a new
+`QueryClientProvider` wrapper in each test file.
+
+Component testing rules:
+
+- Prefer user-visible queries such as `getByRole`, `findByText`, and
+  `within(...)` over implementation details.
+- Mock API helpers from `apps/web/src/api/*`; do not call the real backend from
+  component tests.
+- Keep TanStack Query retries disabled in tests by using `renderWithQuery`.
+- Use `userEvent` for user interactions.
+- Cover loading, error, empty, and success states when a component reads server
+  state.
+- For mutations, assert the API helper was called with the expected payload and
+  assert the visible post-action state.
+
+Run component tests from the project root:
+
+- `bun run test:web`
+
+Run component tests directly from the web workspace:
+
+- `bun --filter @helpdesk/web test`
+- `bun --filter @helpdesk/web test:watch`
+
 ## Documentation Rule
 
 Use Context7 to fetch up-to-date documentation before making framework, library, or API decisions.
