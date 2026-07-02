@@ -10,7 +10,7 @@ export const app = express();
 
 app.use(
   cors({
-    origin: config.webOrigin,
+    origin: config.webOrigins,
     credentials: true
   })
 );

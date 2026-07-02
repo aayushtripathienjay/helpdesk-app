@@ -11,11 +11,15 @@
     "lint": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.4.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7",
+    "better-auth": "^1.6.23",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router": "^7.1.1"
+    "react-hook-form": "^7.80.0",
+    "react-router": "^7.1.1",
+    "vite": "^6.0.7",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
