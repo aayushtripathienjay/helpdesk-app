@@ -285,7 +285,12 @@ describe("Users page", () => {
     const agentRow = (await screen.findByText("agent@example.com")).closest("article");
     expect(agentRow).not.toBeNull();
 
-    await user.click(within(agentRow!).getByRole("button", { name: "Deactivate" }));
+    await user.click(
+      within(agentRow!).getByRole("button", {
+        name: "Open actions for Agent User"
+      })
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Deactivate" }));
 
     await waitFor(() => {
       expect(vi.mocked(deactivateUser).mock.calls[0]?.[0]).toBe("agent-1");

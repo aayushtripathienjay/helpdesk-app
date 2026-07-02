@@ -5,7 +5,17 @@ import {
 } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Headphones, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Headphones,
+  LockKeyhole,
+  Mail,
+  MoreHorizontal,
+  Pencil,
+  ShieldCheck,
+  UserX
+} from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { z } from "zod";
@@ -31,6 +41,13 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -846,32 +863,46 @@ function UsersPage() {
                         Added {new Date(teamMember.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                       <Badge variant="secondary">
                         {teamMember.role === "admin" ? "Admin" : "Agent"}
                       </Badge>
                       <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
                         {teamMember.isActive ? "Active" : "Inactive"}
                       </Badge>
-                      <Button
-                        onClick={() => editUser(teamMember)}
-                        type="button"
-                        variant="outline"
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        disabled={
-                          !teamMember.isActive ||
-                          teamMember.id === user?.id ||
-                          isDeactivating
-                        }
-                        onClick={() => handleDeactivate(teamMember)}
-                        type="button"
-                        variant="destructive"
-                      >
-                        Deactivate
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            aria-label={`Open actions for ${teamMember.name}`}
+                            className="size-8 p-0"
+                            type="button"
+                            variant="outline"
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => editUser(teamMember)}>
+                            <Pencil className="mr-2 size-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            disabled={
+                              !teamMember.isActive ||
+                              teamMember.id === user?.id ||
+                              isDeactivating
+                            }
+                            onSelect={() => {
+                              void handleDeactivate(teamMember);
+                            }}
+                          >
+                            <UserX className="mr-2 size-4" />
+                            Deactivate
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </article>
                 ))}
