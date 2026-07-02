@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const categoryLabels = {
@@ -129,7 +130,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
 
   if (isPending) {
-    return <FullPageMessage message="Checking session..." />;
+    return <FullPageSkeleton />;
   }
 
   if (!session) {
@@ -143,7 +144,7 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
 
   if (isPending) {
-    return <FullPageMessage message="Checking session..." />;
+    return <FullPageSkeleton />;
   }
 
   if (!session) {
@@ -176,7 +177,7 @@ function LoginPage() {
   });
 
   if (isSessionPending) {
-    return <FullPageMessage message="Checking session..." />;
+    return <FullPageSkeleton />;
   }
 
   if (session) {
@@ -424,7 +425,7 @@ function DashboardPage() {
             </CardHeader>
 
             {isLoading ? (
-              <StateMessage message="Loading tickets..." />
+              <TicketListSkeleton />
             ) : error ? (
               <StateMessage message={getErrorMessage(error, "Something went wrong")} />
             ) : (
@@ -738,7 +739,7 @@ function UsersPage() {
               </Button>
             </CardHeader>
             {isUsersLoading ? (
-              <StateMessage message="Loading users..." />
+              <UserListSkeleton />
             ) : usersError ? (
               <StateMessage message={loadError} />
             ) : users.length === 0 ? (
@@ -877,10 +878,106 @@ function StateMessage({ message }: { message: string }) {
   return <p className="px-4 py-8 text-sm text-muted-foreground">{message}</p>;
 }
 
-function FullPageMessage({ message }: { message: string }) {
+function TicketListSkeleton() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
-      <p className="text-sm text-muted-foreground">{message}</p>
+    <div className="divide-y">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div
+          className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
+          key={index}
+        >
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-3/4 max-w-md" />
+            <Skeleton className="h-4 w-52" />
+          </div>
+          <div className="flex gap-2 sm:justify-end">
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-6 w-32 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UserListSkeleton() {
+  return (
+    <div className="divide-y">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          className="grid gap-4 px-4 py-4 xl:grid-cols-[1fr_auto] xl:items-center"
+          key={index}
+        >
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-36" />
+              <Skeleton className="h-6 w-12 rounded-full" />
+            </div>
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="h-9 w-14" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FullPageSkeleton() {
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <div className="rounded-lg border border-slate-800 bg-[#172026] px-4 py-3 shadow-lg shadow-slate-900/10">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-10 bg-white/15" />
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-28 bg-white/15" />
+                <Skeleton className="h-3 w-36 bg-white/15" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="h-8 w-20 bg-white/15" />
+              <Skeleton className="h-8 w-28 bg-white/15" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-9 w-64" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:min-w-72">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+          </div>
+        </div>
+
+        <section className="grid gap-4 lg:grid-cols-[280px_1fr]">
+          <Card>
+            <CardHeader className="p-4 pb-0">
+              <Skeleton className="h-5 w-20" />
+            </CardHeader>
+            <CardContent className="space-y-4 p-4">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b px-4 py-3">
+              <Skeleton className="h-5 w-20" />
+            </CardHeader>
+            <TicketListSkeleton />
+          </Card>
+        </section>
+      </div>
     </main>
   );
 }
