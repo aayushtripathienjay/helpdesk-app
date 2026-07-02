@@ -7,8 +7,18 @@ AI-powered ticket management system for support teams.
 - Bun workspaces
 - React, TypeScript, Vite, Tailwind CSS
 - Express and TypeScript API
-- PostgreSQL and Prisma planned for persistence
-- Database-backed sessions planned for authentication
+- PostgreSQL and Prisma for persistence
+- Better Auth with email/password and database-backed sessions
+- Docker Compose for local PostgreSQL
+
+## App Structure
+
+- `apps/web` - React/Vite frontend
+- `apps/api` - Express API
+- `apps/api/prisma/schema.prisma` - Prisma schema
+- `apps/api/prisma/migrations` - database migrations
+- `apps/api/src/auth.ts` - Better Auth configuration
+- `apps/web/src/api/auth.ts` - Better Auth frontend client
 
 ## Getting Started
 
@@ -59,9 +69,110 @@ bun run dev:web
 The API runs on `http://localhost:3000`.
 The web app runs on `http://localhost:5173`.
 
+## Manually Restarting the App
+
+If the app stops, start it again from the project root:
+
+```sh
+cd /var/www/mosh-code/helpdesk
+docker compose up -d
+```
+
+Use two terminals for the app servers:
+
+```sh
+bun run dev:api
+```
+
+```sh
+bun run dev:web
+```
+
+Or run both together:
+
+```sh
+bun run dev
+```
+
+If `bun` is not found, add Bun to your shell path:
+
+```sh
+export PATH=/home/enjay/.bun/bin:$PATH
+```
+
+If Node version issues appear, switch to Node 22:
+
+```sh
+nvm use 22
+```
+
+Vite normally starts the web app on `http://localhost:5173`, but if that port is busy it may choose another port such as `http://127.0.0.1:5176`. Open the URL printed by Vite in the terminal.
+
+If browser auth fails on a new frontend port, add that exact origin to `WEB_ORIGIN`, `WEB_ORIGINS`, or the local dev origins in `apps/api/src/config.ts`.
+
+## Environment Variables
+
+The main local variables are defined in `.env.example`:
+
+- `DATABASE_URL` - PostgreSQL connection string
+- `BETTER_AUTH_SECRET` - Better Auth secret
+- `BETTER_AUTH_URL` - API base URL for Better Auth
+- `ADMIN_EMAIL` - seeded admin email
+- `ADMIN_PASSWORD` - seeded admin password
+- `ADMIN_NAME` - seeded admin name
+- `API_PORT` - Express API port
+- `WEB_ORIGIN` - allowed frontend origin
+- `WEB_ORIGINS` - optional comma-separated allowed frontend origins
+
+## Database
+
+Local PostgreSQL runs in Docker and is exposed on `localhost:5432`.
+
+Use these settings in DataGrip or another database client:
+
+```txt
+Host: localhost
+Port: 5432
+Database: helpdesk
+User: helpdesk
+Password: helpdesk
+```
+
+The app tables are under the `helpdesk` database, `public` schema:
+
+- `User`
+- `Account`
+- `Session`
+- `Verification`
+- `Ticket`
+- `TicketMessage`
+- `AiSuggestion`
+
+User roles are stored in the `User.role` column using the Prisma `UserRole` enum.
+
+Useful query:
+
+```sql
+SELECT id, email, name, role, "emailVerified", "isActive", "createdAt"
+FROM public."User";
+```
+
+## Migrations
+
+The project currently has:
+
+- Initial schema migration
+- Better Auth migration for `User`, `Account`, `Session`, and `Verification`
+
+Run migrations with:
+
+```sh
+bun --filter @helpdesk/api db:migrate
+```
+
 ## Auth Checks
 
-Public email/password sign-up is disabled. Users should be created intentionally, starting with the seeded admin user.
+Public email/password sign-up is disabled. Users should be created intentionally, starting with the seeded admin user. The seeded admin credentials come from `.env`.
 
 Check that Better Auth is mounted:
 

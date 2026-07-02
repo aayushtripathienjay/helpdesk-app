@@ -80,6 +80,55 @@ Local services:
 - Web: `http://localhost:5173`
 - API health: `http://localhost:3000/api/health`
 
+Manual restart flow:
+
+- From the project root, run `docker compose up -d` to ensure PostgreSQL is running.
+- Start the API with `bun run dev:api`.
+- Start the web app with `bun run dev:web`.
+- Alternatively, start both with `bun run dev`.
+- If `bun` is not found, run `export PATH=/home/enjay/.bun/bin:$PATH`.
+- If Node version problems appear, run `nvm use 22`.
+- Vite may choose a fallback URL such as `http://127.0.0.1:5176` when `5173` is busy. Use the exact URL printed by Vite.
+- If auth fails on a new frontend port, add that exact origin to `WEB_ORIGIN`, `WEB_ORIGINS`, or `apps/api/src/config.ts`.
+
+## Authentication
+
+The app uses Better Auth with email/password sign-in and Prisma-backed
+database sessions.
+
+Important files:
+
+- `apps/api/src/auth.ts` - Better Auth server config
+- `apps/api/src/config.ts` - allowed frontend origins for CORS and Better Auth
+- `apps/web/src/api/auth.ts` - Better Auth React client
+- `apps/api/src/scripts/seed-admin.ts` - initial admin seed script
+
+Auth behavior:
+
+- Public email/password sign-up is disabled.
+- The initial admin user is seeded from `.env`.
+- Default local seed credentials are `admin@example.com` / `password123`.
+- Better Auth is mounted under `/api/auth`.
+- The frontend uses `window.location.origin` with `basePath: "/api/auth"`, so local browser auth calls go through the Vite proxy.
+- Sessions are stored in the database and sent via the `better-auth.session_token` cookie.
+
+Local auth endpoints:
+
+- API auth health: `http://localhost:3000/api/auth/ok`
+- Vite-proxied auth health: `http://localhost:5173/api/auth/ok`
+- Current session: `/api/auth/get-session`
+- Email sign-in: `/api/auth/sign-in/email`
+
+Trusted local frontend origins:
+
+- `http://localhost:5173`
+- `http://localhost:5174`
+- `http://127.0.0.1:5176`
+
+When running the web app on a different host or port, add that exact origin to
+`WEB_ORIGIN`, `WEB_ORIGINS`, or the local dev origins in `apps/api/src/config.ts`.
+If it is missing, Better Auth rejects browser sign-in with `Invalid origin`.
+
 ## Documentation Rule
 
 Use Context7 to fetch up-to-date documentation before making framework, library, or API decisions.
