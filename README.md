@@ -6,6 +6,7 @@ AI-powered ticket management system for support teams.
 
 - Bun workspaces
 - React, TypeScript, Vite, Tailwind CSS
+- Axios and TanStack Query for frontend API/server state
 - Express and TypeScript API
 - PostgreSQL and Prisma for persistence
 - Better Auth with email/password and database-backed sessions
@@ -129,6 +130,14 @@ The main local variables are defined in `.env.example`:
 - `API_PORT` - Express API port
 - `WEB_ORIGIN` - allowed frontend origin
 - `WEB_ORIGINS` - optional comma-separated allowed frontend origins
+
+## Frontend API Pattern
+
+Frontend HTTP helpers should live in `apps/web/src/api/*` and use `axios`.
+React components should use TanStack Query for API-backed server state:
+`useQuery` for reads, `useMutation` for writes, and query invalidation after
+create/update/delete actions. Avoid manual `useEffect` fetches plus duplicated
+local state for API data unless there is a specific reason.
 
 ## Database
 

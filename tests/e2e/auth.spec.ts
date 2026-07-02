@@ -29,7 +29,7 @@ test("admin can sign in and access the users page", async ({ page }) => {
   await page.getByRole("link", { name: "Users" }).click();
   await expect(page).toHaveURL("/users");
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-  await expect(page.getByText("Admin only")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team Members" })).toBeVisible();
 });
 
 test("agent can sign in but cannot access the users page", async ({ page }) => {

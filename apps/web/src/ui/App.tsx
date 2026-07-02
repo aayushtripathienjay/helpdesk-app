@@ -1,16 +1,24 @@
 import {
   type ReactNode,
-  useEffect,
   useMemo,
   useState
 } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, EyeOff, Headphones, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { z } from "zod";
 import { authClient } from "../api/auth";
-import { listTickets, type Ticket } from "../api/tickets";
+import { listTickets } from "../api/tickets";
+import {
+  createUser,
+  deactivateUser,
+  listUsers,
+  updateUser,
+  type HelpdeskUser,
+  type UserRole
+} from "../api/users";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,18 +46,39 @@ const statusLabels = {
   closed: "Closed"
 };
 
+const queryKeys = {
+  tickets: ["tickets"],
+  users: ["users"]
+} as const;
+
 const loginSchema = z.object({
   email: z.email("Enter a valid email address"),
   password: z.string().min(1, "Enter your password")
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
-type UserRole = "admin" | "agent";
 type SessionUser = {
+  id?: string | null;
   email?: string | null;
   name?: string | null;
   role?: UserRole | null;
   isActive?: boolean | null;
+};
+
+type UserFormState = {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  isActive: boolean;
+};
+
+const emptyUserForm: UserFormState = {
+  name: "",
+  email: "",
+  password: "",
+  role: "agent",
+  isActive: true
 };
 
 const selectClassName =
@@ -65,6 +94,10 @@ function getSessionUser(session: unknown): SessionUser | null {
 
 function isAdminSession(session: unknown) {
   return getSessionUser(session)?.role === "admin";
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function App() {
@@ -176,90 +209,146 @@ function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-8">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Sign in</CardTitle>
-          <CardDescription>
-            Use your helpdesk account to access the support dashboard.
-          </CardDescription>
-        </CardHeader>
-
-        <form onSubmit={handleSubmit(signIn)}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                autoComplete="email"
-                aria-invalid={errors.email ? "true" : "false"}
-                className={cn(
-                  errors.email &&
-                    "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
-                )}
-                id="email"
-                {...register("email")}
-                type="email"
-              />
-              {errors.email ? (
-                <p className="text-sm text-destructive">
-                  {errors.email.message}
+    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] px-4 py-8">
+      <Card className="grid w-full max-w-5xl overflow-hidden border-slate-200 shadow-xl shadow-slate-900/10 lg:grid-cols-[1fr_420px]">
+        <section className="flex min-h-72 flex-col justify-between bg-[#172026] p-6 text-white sm:p-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="grid size-11 place-items-center rounded-lg bg-teal-700 text-white shadow-sm ring-1 ring-white/15">
+                <Headphones className="size-5" />
+              </span>
+              <div>
+                <p className="text-lg font-semibold leading-5">Helpdesk</p>
+                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-teal-100/80">
+                  Support console
                 </p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  autoComplete="current-password"
-                  aria-invalid={errors.password ? "true" : "false"}
-                  className={cn(
-                    "pr-10",
-                    errors.password &&
-                      "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
-                  )}
-                  id="password"
-                  {...register("password")}
-                  type={isPasswordVisible ? "text" : "password"}
-                />
-                <Button
-                  aria-label={
-                    isPasswordVisible ? "Hide password" : "Show password"
-                  }
-                  className="absolute right-1 top-1/2 size-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setIsPasswordVisible((current) => !current)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  {isPasswordVisible ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </Button>
               </div>
-              {errors.password ? (
-                <p className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              ) : null}
             </div>
 
-            {authError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Sign-in failed</AlertTitle>
-                <AlertDescription>{authError}</AlertDescription>
-              </Alert>
-            ) : null}
-          </CardContent>
+            <div className="mt-12 max-w-md">
+              <p className="text-sm font-medium uppercase tracking-wide text-teal-100/80">
+                Agent workspace
+              </p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+                Sign in to manage support work.
+              </h1>
+              <p className="mt-4 text-sm leading-6 text-slate-200">
+                Access tickets, user management, and team workflows from one
+                secure dashboard.
+              </p>
+            </div>
+          </div>
 
-          <CardFooter>
-            <Button className="w-full" disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Signing in..." : "Sign in"}
-            </Button>
-          </CardFooter>
-        </form>
+          <div className="mt-10 grid gap-3 text-sm sm:grid-cols-3">
+            <div className="rounded-md border border-white/10 bg-white/10 p-3">
+              <p className="font-medium">Tickets</p>
+              <p className="mt-1 text-xs text-slate-300">Triage queue</p>
+            </div>
+            <div className="rounded-md border border-white/10 bg-white/10 p-3">
+              <p className="font-medium">Agents</p>
+              <p className="mt-1 text-xs text-slate-300">Role access</p>
+            </div>
+            <div className="rounded-md border border-white/10 bg-white/10 p-3">
+              <p className="font-medium">Sessions</p>
+              <p className="mt-1 text-xs text-slate-300">Protected</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-card">
+          <CardHeader className="space-y-2 px-6 pt-8 sm:px-8">
+            <div className="flex size-11 items-center justify-center rounded-lg border bg-muted">
+              <ShieldCheck className="size-5 text-teal-700" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl">Welcome back</CardTitle>
+              <CardDescription>
+                Use your helpdesk account to continue.
+              </CardDescription>
+            </div>
+          </CardHeader>
+
+          <form onSubmit={handleSubmit(signIn)}>
+            <CardContent className="space-y-5 px-6 sm:px-8">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    autoComplete="email"
+                    aria-invalid={errors.email ? "true" : "false"}
+                    className={cn(
+                      "pl-9",
+                      errors.email &&
+                        "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
+                    )}
+                    id="email"
+                    {...register("email")}
+                    type="email"
+                  />
+                </div>
+                {errors.email ? (
+                  <p className="text-sm text-destructive">
+                    {errors.email.message}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    autoComplete="current-password"
+                    aria-invalid={errors.password ? "true" : "false"}
+                    className={cn(
+                      "pl-9 pr-10",
+                      errors.password &&
+                        "border-destructive/80 focus-visible:ring-1 focus-visible:ring-destructive/80 focus-visible:ring-offset-0"
+                    )}
+                    id="password"
+                    {...register("password")}
+                    type={isPasswordVisible ? "text" : "password"}
+                  />
+                  <Button
+                    aria-label={
+                      isPasswordVisible ? "Hide password" : "Show password"
+                    }
+                    className="absolute right-1 top-1/2 size-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsPasswordVisible((current) => !current)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {isPasswordVisible ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </Button>
+                </div>
+                {errors.password ? (
+                  <p className="text-sm text-destructive">
+                    {errors.password.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {authError ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Sign-in failed</AlertTitle>
+                  <AlertDescription>{authError}</AlertDescription>
+                </Alert>
+              ) : null}
+            </CardContent>
+
+            <CardFooter className="px-6 pb-8 sm:px-8">
+              <Button className="h-11 w-full" disabled={isSubmitting} type="submit">
+                {isSubmitting ? "Signing in..." : "Sign in"}
+              </Button>
+            </CardFooter>
+          </form>
+        </section>
       </Card>
     </main>
   );
@@ -268,25 +357,14 @@ function LoginPage() {
 function DashboardPage() {
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listTickets()
-      .then((data) => {
-        setTickets(data);
-        setError(null);
-      })
-      .catch((caughtError: unknown) => {
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Something went wrong"
-        );
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+  const {
+    data: tickets = [],
+    error,
+    isLoading
+  } = useQuery({
+    queryKey: queryKeys.tickets,
+    queryFn: listTickets
+  });
 
   const openTickets = useMemo(
     () => tickets.filter((ticket) => ticket.status === "open").length,
@@ -348,7 +426,7 @@ function DashboardPage() {
             {isLoading ? (
               <StateMessage message="Loading tickets..." />
             ) : error ? (
-              <StateMessage message={error} />
+              <StateMessage message={getErrorMessage(error, "Something went wrong")} />
             ) : (
               <div className="divide-y">
                 {tickets.map((ticket) => (
@@ -382,8 +460,138 @@ function DashboardPage() {
 }
 
 function UsersPage() {
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
+  const [form, setForm] = useState<UserFormState>(emptyUserForm);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const {
+    data: users = [],
+    error: usersError,
+    isFetching: isUsersFetching,
+    isLoading: isUsersLoading,
+    refetch: refetchUsers
+  } = useQuery({
+    queryKey: queryKeys.users,
+    queryFn: listUsers
+  });
+  const createUserMutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users });
+      setMessage("User created.");
+      resetForm();
+    }
+  });
+  const updateUserMutation = useMutation({
+    mutationFn: ({
+      userId,
+      payload
+    }: {
+      userId: string;
+      payload: Parameters<typeof updateUser>[1];
+    }) => updateUser(userId, payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users });
+      setMessage("User updated.");
+      resetForm();
+    }
+  });
+  const deactivateUserMutation = useMutation({
+    mutationFn: deactivateUser,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users });
+      setMessage("User deactivated.");
+    }
+  });
+  const isSaving = createUserMutation.isPending || updateUserMutation.isPending;
+  const isDeactivating = deactivateUserMutation.isPending;
+  const loadError = getErrorMessage(usersError, "Failed to load users");
+
+  function updateForm<Value extends keyof UserFormState>(
+    key: Value,
+    value: UserFormState[Value]
+  ) {
+    setForm((current) => ({
+      ...current,
+      [key]: value
+    }));
+  }
+
+  function resetForm() {
+    setForm(emptyUserForm);
+    setEditingUserId(null);
+    setError(null);
+  }
+
+  function editUser(selectedUser: HelpdeskUser) {
+    setEditingUserId(selectedUser.id);
+    setForm({
+      name: selectedUser.name,
+      email: selectedUser.email,
+      password: "",
+      role: selectedUser.role,
+      isActive: selectedUser.isActive
+    });
+    setError(null);
+    setMessage(null);
+  }
+
+  async function saveUser(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    try {
+      if (editingUserId) {
+        const payload = {
+          name: form.name,
+          email: form.email,
+          role: form.role,
+          isActive: form.isActive,
+          ...(form.password ? { password: form.password } : {})
+        };
+        await updateUserMutation.mutateAsync({
+          userId: editingUserId,
+          payload
+        });
+      } else {
+        await createUserMutation.mutateAsync({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          role: form.role,
+          isActive: true
+        });
+      }
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : "Failed to save user"
+      );
+    }
+  }
+
+  async function handleDeactivate(selectedUser: HelpdeskUser) {
+    if (selectedUser.id === user?.id) {
+      setError("You cannot deactivate your own account.");
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      await deactivateUserMutation.mutateAsync(selectedUser.id);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Failed to deactivate user"
+      );
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
@@ -401,41 +609,192 @@ function UsersPage() {
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          <Card>
-            <CardHeader className="p-4 pb-0">
-              <CardTitle className="text-base">Access</CardTitle>
+          <Card className="h-fit">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-base">
+                {editingUserId ? "Edit User" : "Create User"}
+              </CardTitle>
+              <CardDescription>
+                {editingUserId
+                  ? "Update access and account details."
+                  : "Add an admin or support agent."}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 text-sm text-muted-foreground">
-              <p>Only admins can view this page.</p>
-              <Badge className="bg-teal-50 text-teal-800 hover:bg-teal-50">
-                Admin only
-              </Badge>
-            </CardContent>
+            <form onSubmit={saveUser}>
+              <CardContent className="space-y-4 p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="user-name">Name</Label>
+                  <Input
+                    id="user-name"
+                    onChange={(event) => updateForm("name", event.target.value)}
+                    required
+                    value={form.name}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-email">Email</Label>
+                  <Input
+                    id="user-email"
+                    onChange={(event) => updateForm("email", event.target.value)}
+                    required
+                    type="email"
+                    value={form.email}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-password">
+                    {editingUserId ? "New password" : "Password"}
+                  </Label>
+                  <Input
+                    id="user-password"
+                    minLength={8}
+                    onChange={(event) =>
+                      updateForm("password", event.target.value)
+                    }
+                    placeholder={editingUserId ? "Leave blank to keep current" : ""}
+                    required={!editingUserId}
+                    type="password"
+                    value={form.password}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-role">Role</Label>
+                  <select
+                    className={selectClassName}
+                    id="user-role"
+                    onChange={(event) =>
+                      updateForm("role", event.target.value as UserRole)
+                    }
+                    value={form.role}
+                  >
+                    <option value="agent">Agent</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                {editingUserId ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      checked={form.isActive}
+                      disabled={editingUserId === user?.id}
+                      onChange={(event) =>
+                        updateForm("isActive", event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    Active account
+                  </label>
+                ) : null}
+
+                {error ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>User action failed</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {message ? (
+                  <Alert>
+                    <AlertTitle>Saved</AlertTitle>
+                    <AlertDescription>{message}</AlertDescription>
+                  </Alert>
+                ) : null}
+              </CardContent>
+              <CardFooter className="flex gap-2 px-4 pb-4">
+                <Button disabled={isSaving} type="submit">
+                  {isSaving
+                    ? "Saving..."
+                    : editingUserId
+                      ? "Save changes"
+                      : "Create user"}
+                </Button>
+                {editingUserId ? (
+                  <Button onClick={resetForm} type="button" variant="outline">
+                    Cancel
+                  </Button>
+                ) : null}
+              </CardFooter>
+            </form>
           </Card>
 
           <Card className="overflow-hidden">
-            <CardHeader className="border-b px-4 py-3">
-              <CardTitle className="text-base">Team Members</CardTitle>
-              <CardDescription>
-                User creation and role editing can be connected here next.
-              </CardDescription>
+            <CardHeader className="border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Team Members</CardTitle>
+                <CardDescription>
+                  Manage helpdesk admins and support agents.
+                </CardDescription>
+              </div>
+              <Button
+                disabled={isUsersFetching}
+                onClick={() => void refetchUsers()}
+                type="button"
+                variant="outline"
+              >
+                {isUsersFetching ? "Refreshing..." : "Refresh"}
+              </Button>
             </CardHeader>
-            <div className="divide-y">
-              <article className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center">
-                <div>
-                  <h2 className="font-medium">{user?.name ?? "Admin"}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {user?.email ?? "admin@example.com"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 sm:justify-end">
-                  <Badge variant="secondary">Admin</Badge>
-                  <Badge variant="outline">
-                    {user?.isActive === false ? "Inactive" : "Active"}
-                  </Badge>
-                </div>
-              </article>
-            </div>
+            {isUsersLoading ? (
+              <StateMessage message="Loading users..." />
+            ) : usersError ? (
+              <StateMessage message={loadError} />
+            ) : users.length === 0 ? (
+              <StateMessage message="No users found." />
+            ) : (
+              <div className="divide-y">
+                {users.map((teamMember) => (
+                  <article
+                    className="grid gap-4 px-4 py-4 xl:grid-cols-[1fr_auto] xl:items-center"
+                    key={teamMember.id}
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-medium">{teamMember.name}</h2>
+                        {teamMember.id === user?.id ? (
+                          <Badge variant="secondary">You</Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {teamMember.email}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Added {new Date(teamMember.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                      <Badge variant="secondary">
+                        {teamMember.role === "admin" ? "Admin" : "Agent"}
+                      </Badge>
+                      <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
+                        {teamMember.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                      <Button
+                        onClick={() => editUser(teamMember)}
+                        type="button"
+                        variant="outline"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        disabled={
+                          !teamMember.isActive ||
+                          teamMember.id === user?.id ||
+                          isDeactivating
+                        }
+                        onClick={() => handleDeactivate(teamMember)}
+                        type="button"
+                        variant="destructive"
+                      >
+                        Deactivate
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </Card>
         </section>
       </div>
@@ -462,7 +821,7 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   }
 
   return (
-    <nav className="flex flex-col gap-4 rounded-lg border border-slate-800 bg-[#172026] px-4 py-3 text-white shadow-lg shadow-slate-900/10 sm:flex-row sm:items-center sm:justify-between">
+    <nav className="sticky top-4 z-50 flex flex-col gap-4 rounded-lg border border-slate-800 bg-[#172026] px-4 py-3 text-white shadow-lg shadow-slate-900/10 sm:flex-row sm:items-center sm:justify-between">
       <a className="flex items-center gap-3 text-white" href="/">
         <span className="grid size-10 place-items-center rounded-lg bg-teal-700 text-base font-semibold text-white shadow-sm ring-1 ring-white/15">
           H

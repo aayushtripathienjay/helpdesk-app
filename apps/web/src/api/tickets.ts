@@ -1,3 +1,5 @@
+import axios from "axios";
+
 export type TicketStatus = "open" | "resolved" | "closed";
 export type TicketCategory =
   | "general_question"
@@ -15,12 +17,10 @@ export type Ticket = {
 };
 
 export async function listTickets(): Promise<Ticket[]> {
-  const response = await fetch("/api/tickets");
-
-  if (!response.ok) {
+  try {
+    const response = await axios.get<{ data: Ticket[] }>("/api/tickets");
+    return response.data.data;
+  } catch {
     throw new Error("Failed to load tickets");
   }
-
-  const payload = (await response.json()) as { data: Ticket[] };
-  return payload.data;
 }

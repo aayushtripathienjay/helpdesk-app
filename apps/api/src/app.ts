@@ -6,6 +6,7 @@ import { config } from "./config";
 import { requireAuth } from "./middleware/auth";
 import { healthRouter } from "./routes/health";
 import { ticketsRouter } from "./routes/tickets";
+import { usersRouter } from "./routes/users";
 
 export const app = express();
 
@@ -33,8 +34,10 @@ app.get("/", (_request, response) => {
 
 app.use("/health", healthRouter);
 app.use("/tickets", requireAuth, ticketsRouter);
+app.use("/users", usersRouter);
 app.use("/api/health", healthRouter);
 app.use("/api/tickets", requireAuth, ticketsRouter);
+app.use("/api/users", usersRouter);
 
 app.get("/api/me", async (request, response) => {
   const session = await auth.api.getSession({

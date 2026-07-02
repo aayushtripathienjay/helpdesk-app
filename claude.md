@@ -43,6 +43,8 @@ Users and roles:
 - Bun workspaces
 - React, TypeScript, Vite, Tailwind CSS
 - React Router
+- Axios for frontend HTTP calls
+- TanStack Query for frontend server-state fetching, caching, and mutations
 - Node.js, Express, TypeScript
 - PostgreSQL
 - Prisma
@@ -129,6 +131,14 @@ Trusted local frontend origins:
 When running the web app on a different host or port, add that exact origin to
 `WEB_ORIGIN`, `WEB_ORIGINS`, or the local dev origins in `apps/api/src/config.ts`.
 If it is missing, Better Auth rejects browser sign-in with `Invalid origin`.
+
+## Frontend API And Server State
+
+- Use `axios` for frontend HTTP requests from `apps/web/src/api/*`.
+- Use TanStack Query (`useQuery`, `useMutation`, and query invalidation) for server state in React components.
+- Do not add component-level `useEffect` fetch flows for API data when the data can be represented as a query.
+- After create, update, or delete actions, invalidate the related query key instead of manually re-fetching and storing duplicate local state.
+- Keep Better Auth session handling on the Better Auth client hooks unless the auth flow itself needs a dedicated API helper.
 
 ## Documentation Rule
 
