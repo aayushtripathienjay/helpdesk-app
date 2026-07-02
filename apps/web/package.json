@@ -1,0 +1,29 @@
+{
+  "name": "@helpdesk/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "/home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js --host 0.0.0.0",
+    "build": "tsc -b && /home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js build",
+    "preview": "/home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js preview --host 0.0.0.0",
+    "typecheck": "tsc -b --noEmit",
+    "lint": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}
