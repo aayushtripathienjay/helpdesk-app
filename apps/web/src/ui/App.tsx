@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Pencil,
   ShieldCheck,
+  Trash2,
   UserX
 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -24,6 +25,7 @@ import { listTickets } from "../api/tickets";
 import {
   createUser,
   deactivateUser,
+  deleteUser,
   listUsers,
   updateUser,
   type HelpdeskUser,
@@ -512,6 +514,7 @@ function UsersPage() {
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<HelpdeskUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const {
@@ -570,8 +573,20 @@ function UsersPage() {
       setMessage("User deactivated.");
     }
   });
+  const deleteUserMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: async (_deletedUser, userId) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users });
+      if (editingUserId === userId) {
+        resetForm();
+      }
+      setDeleteCandidate(null);
+      setMessage("User deleted.");
+    }
+  });
   const isSaving = createUserMutation.isPending || updateUserMutation.isPending;
   const isDeactivating = deactivateUserMutation.isPending;
+  const isDeleting = deleteUserMutation.isPending;
   const loadError = getErrorMessage(usersError, "Failed to load users");
 
   function resetForm() {
@@ -649,6 +664,23 @@ function UsersPage() {
         caughtError instanceof Error
           ? caughtError.message
           : "Failed to deactivate user"
+      );
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteCandidate) {
+      return;
+    }
+
+    setActionError(null);
+    setMessage(null);
+
+    try {
+      await deleteUserMutation.mutateAsync(deleteCandidate.id);
+    } catch (caughtError) {
+      setActionError(
+        caughtError instanceof Error ? caughtError.message : "Failed to delete user"
       );
     }
   }
@@ -886,21 +918,38 @@ function UsersPage() {
                             <Pencil className="mr-2 size-4" />
                             Edit
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            disabled={
-                              !teamMember.isActive ||
-                              teamMember.id === user?.id ||
-                              isDeactivating
-                            }
-                            onSelect={() => {
-                              void handleDeactivate(teamMember);
-                            }}
-                          >
-                            <UserX className="mr-2 size-4" />
-                            Deactivate
-                          </DropdownMenuItem>
+                          {teamMember.isActive && teamMember.id !== user?.id ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={isDeactivating}
+                                onSelect={() => {
+                                  void handleDeactivate(teamMember);
+                                }}
+                              >
+                                <UserX className="mr-2 size-4" />
+                                Deactivate
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
+                          {teamMember.role === "agent" ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={isDeleting}
+                                onSelect={() => {
+                                  setActionError(null);
+                                  setMessage(null);
+                                  setDeleteCandidate(teamMember);
+                                }}
+                              >
+                                <Trash2 className="mr-2 size-4" />
+                                Delete user
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -911,6 +960,42 @@ function UsersPage() {
           </Card>
         </section>
       </div>
+      {deleteCandidate ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          role="dialog"
+        >
+          <div className="w-full max-w-md rounded-lg border bg-background p-5 shadow-xl">
+            <h2 className="text-lg font-semibold">Delete user?</h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Delete {deleteCandidate.name} ({deleteCandidate.email})? The user
+              will be removed from the active list, sessions will be cleared, and
+              the email can be reused.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                disabled={isDeleting}
+                onClick={() => setDeleteCandidate(null)}
+                type="button"
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={isDeleting}
+                onClick={() => {
+                  void handleDelete();
+                }}
+                type="button"
+                variant="destructive"
+              >
+                {isDeleting ? "Deleting..." : "Delete user"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -5,6 +5,7 @@ import { App } from "./App";
 import {
   createUser,
   deactivateUser,
+  deleteUser,
   listUsers,
   updateUser,
   UserApiError,
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => {
   return {
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
+    deleteUser: vi.fn(),
     listUsers: vi.fn(),
     signOut: vi.fn(),
     updateUser: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock("../api/auth", () => ({
 vi.mock("../api/users", () => ({
   createUser: mocks.createUser,
   deactivateUser: mocks.deactivateUser,
+  deleteUser: mocks.deleteUser,
   listUsers: mocks.listUsers,
   updateUser: mocks.updateUser,
   UserApiError: mocks.UserApiError
@@ -91,6 +94,7 @@ describe("Users page", () => {
   beforeEach(() => {
     vi.mocked(createUser).mockReset();
     vi.mocked(deactivateUser).mockReset();
+    vi.mocked(deleteUser).mockReset();
     vi.mocked(listUsers).mockReset();
     vi.mocked(updateUser).mockReset();
   });
@@ -298,5 +302,106 @@ describe("Users page", () => {
     expect(await screen.findByText("User deactivated.")).toBeVisible();
     expect(await screen.findByText("Inactive")).toBeVisible();
     expect(vi.mocked(listUsers)).toHaveBeenCalledTimes(2);
+  });
+
+  test("opens a confirmation modal before deleting an agent user", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser, agentUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    const agentRow = (await screen.findByText("agent@example.com")).closest("article");
+    expect(agentRow).not.toBeNull();
+
+    await user.click(
+      within(agentRow!).getByRole("button", {
+        name: "Open actions for Agent User"
+      })
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Delete user" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Delete user?" })).toBeVisible();
+    expect(within(dialog).getByText(/Agent User \(agent@example\.com\)/)).toBeVisible();
+    expect(within(dialog).getByText(/email can be reused/)).toBeVisible();
+    expect(vi.mocked(deleteUser)).not.toHaveBeenCalled();
+  });
+
+  test("canceling delete does not call the delete API", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser, agentUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    const agentRow = (await screen.findByText("agent@example.com")).closest("article");
+    expect(agentRow).not.toBeNull();
+
+    await user.click(
+      within(agentRow!).getByRole("button", {
+        name: "Open actions for Agent User"
+      })
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Delete user" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", {
+      name: "Cancel"
+    }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(vi.mocked(deleteUser)).not.toHaveBeenCalled();
+  });
+
+  test("confirming delete calls the delete helper and removes the user after refetch", async () => {
+    vi.mocked(listUsers)
+      .mockResolvedValueOnce([adminUser, agentUser])
+      .mockResolvedValueOnce([adminUser]);
+    vi.mocked(deleteUser).mockResolvedValue({
+      ...agentUser,
+      isActive: false
+    });
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    const agentRow = (await screen.findByText("agent@example.com")).closest("article");
+    expect(agentRow).not.toBeNull();
+
+    await user.click(
+      within(agentRow!).getByRole("button", {
+        name: "Open actions for Agent User"
+      })
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Delete user" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete user"
+      })
+    );
+
+    await waitFor(() => {
+      expect(vi.mocked(deleteUser).mock.calls[0]?.[0]).toBe("agent-1");
+    });
+    expect(await screen.findByText("User deleted.")).toBeVisible();
+    await waitFor(() => {
+      expect(screen.queryByText("Agent User")).not.toBeInTheDocument();
+    });
+    expect(vi.mocked(listUsers)).toHaveBeenCalledTimes(2);
+  });
+
+  test("admin rows do not expose a delete action", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser, agentUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    const adminRow = (await screen.findByText("admin@example.com")).closest("article");
+    expect(adminRow).not.toBeNull();
+
+    await user.click(
+      within(adminRow!).getByRole("button", {
+        name: "Open actions for Admin User"
+      })
+    );
+
+    expect(screen.queryByRole("menuitem", { name: "Delete user" })).not.toBeInTheDocument();
   });
 });

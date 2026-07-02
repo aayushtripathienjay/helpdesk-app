@@ -102,6 +102,7 @@ usersRouter.use(requireAdmin);
 
 usersRouter.get("/", async (_request, response) => {
   const users = await prisma.user.findMany({
+    where: { deletedAt: null },
     orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
     select: userSelect
   });
@@ -206,11 +207,35 @@ usersRouter.patch("/:userId", async (request, response) => {
   }
 
   try {
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data,
-      select: userSelect
+    const user = await prisma.$transaction(async (transaction) => {
+      const existingUser = await transaction.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: { id: true }
+      });
+
+      if (!existingUser) {
+        return null;
+      }
+
+      const updatedUser = await transaction.user.update({
+        where: { id: userId },
+        data,
+        select: userSelect
+      });
+
+      if (isActive === false) {
+        await transaction.session.deleteMany({
+          where: { userId }
+        });
+      }
+
+      return updatedUser;
     });
+
+    if (!user) {
+      response.status(404).json({ error: "User not found" });
+      return;
+    }
 
     if (password) {
       await upsertCredentialAccount(user.id, password);
@@ -242,26 +267,54 @@ usersRouter.patch("/:userId", async (request, response) => {
 });
 
 usersRouter.delete("/:userId", async (request, response) => {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(request.headers)
-  });
   const userId = request.params.userId;
 
-  if (session?.user.id === userId) {
-    response.status(400).json({ error: "You cannot deactivate your own account" });
-    return;
-  }
-
   try {
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: { isActive: false },
-      select: userSelect
+    const user = await prisma.$transaction(async (transaction) => {
+      const existingUser = await transaction.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: {
+          id: true,
+          email: true,
+          role: true
+        }
+      });
+
+      if (!existingUser) {
+        return null;
+      }
+
+      if (existingUser.role === UserRole.admin) {
+        return "admin";
+      }
+
+      const deletedUser = await transaction.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: new Date(),
+          deletedEmail: existingUser.email,
+          email: `deleted-${existingUser.id}@deleted.local`,
+          isActive: false
+        },
+        select: userSelect
+      });
+
+      await transaction.session.deleteMany({
+        where: { userId }
+      });
+
+      return deletedUser;
     });
 
-    await prisma.session.deleteMany({
-      where: { userId }
-    });
+    if (!user) {
+      response.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    if (user === "admin") {
+      response.status(400).json({ error: "Admin users cannot be deleted" });
+      return;
+    }
 
     response.json({ data: user });
   } catch (error) {

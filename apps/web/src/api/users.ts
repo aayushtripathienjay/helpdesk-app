@@ -92,6 +92,21 @@ export async function updateUser(userId: string, payload: UserPayload) {
 
 export async function deactivateUser(userId: string) {
   try {
+    const response = await axios.patch<{ data: HelpdeskUser }>(
+      `/api/users/${userId}`,
+      { isActive: false },
+      { withCredentials: true }
+    );
+
+    return response.data.data;
+  } catch (error) {
+    const apiError = readError(error);
+    throw new UserApiError(apiError.message, apiError.field);
+  }
+}
+
+export async function deleteUser(userId: string) {
+  try {
     const response = await axios.delete<{ data: HelpdeskUser }>(
       `/api/users/${userId}`,
       { withCredentials: true }

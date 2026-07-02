@@ -45,6 +45,6 @@ run([
   "helpdesk",
   "helpdesk_test"
 ], "../..");
-run(["bunx", "prisma", "migrate", "deploy"]);
+run(["./node_modules/.bin/prisma", "migrate", "deploy"]);
 
 console.log("Reset test database: helpdesk_test");
