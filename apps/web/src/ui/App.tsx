@@ -6,6 +6,18 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type Column,
+  type ColumnDef,
+  type SortingState
+} from "@tanstack/react-table";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Eye,
   EyeOff,
   Headphones,
@@ -1003,87 +1015,19 @@ function UsersPage() {
             ) : users.length === 0 ? (
               <StateMessage message="No users found." />
             ) : (
-              <div className="divide-y">
-                {users.map((teamMember) => (
-                  <article
-                    className="grid gap-4 px-4 py-4 xl:grid-cols-[1fr_auto] xl:items-center"
-                    key={teamMember.id}
-                  >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-medium">{teamMember.name}</h2>
-                        {teamMember.id === user?.id ? (
-                          <Badge variant="secondary">You</Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {teamMember.email}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Added {new Date(teamMember.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                      <Badge variant="secondary">
-                        {teamMember.role === "admin" ? "Admin" : "Agent"}
-                      </Badge>
-                      <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
-                        {teamMember.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            aria-label={`Open actions for ${teamMember.name}`}
-                            className="size-8 p-0"
-                            type="button"
-                            variant="outline"
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => editUser(teamMember)}>
-                            <Pencil className="mr-2 size-4" />
-                            Edit
-                          </DropdownMenuItem>
-                          {teamMember.isActive && teamMember.id !== user?.id ? (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                disabled={isDeactivating}
-                                onSelect={() => {
-                                  void handleDeactivate(teamMember);
-                                }}
-                              >
-                                <UserX className="mr-2 size-4" />
-                                Deactivate
-                              </DropdownMenuItem>
-                            </>
-                          ) : null}
-                          {teamMember.role === "agent" ? (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                disabled={isDeleting}
-                                onSelect={() => {
-                                  setActionError(null);
-                                  setMessage(null);
-                                  setDeleteCandidate(teamMember);
-                                }}
-                              >
-                                <Trash2 className="mr-2 size-4" />
-                                Delete user
-                              </DropdownMenuItem>
-                            </>
-                          ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <UserList
+                currentUserId={user?.id}
+                isDeactivating={isDeactivating}
+                isDeleting={isDeleting}
+                onDeactivate={handleDeactivate}
+                onDelete={(teamMember) => {
+                  setActionError(null);
+                  setMessage(null);
+                  setDeleteCandidate(teamMember);
+                }}
+                onEdit={editUser}
+                users={users}
+              />
             )}
           </Card>
         </section>
@@ -1129,41 +1073,312 @@ function UsersPage() {
 }
 
 function TicketList({ tickets }: { tickets: Ticket[] }) {
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "createdAt", desc: true }
+  ]);
+  const columns = useMemo<ColumnDef<Ticket>[]>(
+    () => [
+      {
+        accessorKey: "subject",
+        header: "Subject"
+      },
+      {
+        accessorKey: "requesterEmail",
+        header: "Requester"
+      },
+      {
+        accessorKey: "status",
+        header: "Status"
+      },
+      {
+        accessorKey: "category",
+        header: "Category",
+        sortingFn: (rowA, rowB) => {
+          const first = rowA.original.category
+            ? ticketCategoryLabels[rowA.original.category]
+            : "Uncategorized";
+          const second = rowB.original.category
+            ? ticketCategoryLabels[rowB.original.category]
+            : "Uncategorized";
+
+          return first.localeCompare(second);
+        }
+      },
+      {
+        accessorFn: (ticket) => new Date(ticket.createdAt).getTime(),
+        id: "createdAt",
+        header: "Created"
+      }
+    ],
+    []
+  );
+  const table = useReactTable({
+    columns,
+    data: tickets,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    state: { sorting }
+  });
+
   return (
-    <div className="divide-y bg-white">
-      {tickets.map((ticket) => (
-        <article
-          className="grid gap-4 px-4 py-4 transition-colors hover:bg-slate-50 lg:grid-cols-[1fr_auto] lg:items-center"
-          key={ticket.id}
-        >
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-medium text-slate-950">{ticket.subject}</h2>
-              <Badge
-                variant={
-                  ticket.status === TicketStatusValue.Open ? "outline" : "secondary"
-                }
+    <div className="overflow-x-auto bg-white">
+      <div className="min-w-[58rem]">
+        {table.getHeaderGroups().map((headerGroup) => (
+          <div
+            className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2"
+            key={headerGroup.id}
+          >
+            {headerGroup.headers.map((header) => (
+              <SortableHeader
+                column={header.column}
+                key={header.id}
+                label={String(
+                  flexRender(header.column.columnDef.header, header.getContext())
+                )}
+              />
+            ))}
+          </div>
+        ))}
+        <div className="divide-y">
+          {table.getRowModel().rows.map((row) => {
+            const ticket = row.original;
+
+            return (
+              <article
+                className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 px-4 py-4 transition-colors hover:bg-slate-50"
+                key={ticket.id}
               >
-                {ticketStatusLabels[ticket.status]}
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {ticket.requesterEmail}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Created {new Date(ticket.createdAt).toLocaleString()}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <Badge variant="secondary">
-              {ticket.category
-                ? ticketCategoryLabels[ticket.category]
-                : "Uncategorized"}
-            </Badge>
-          </div>
-        </article>
-      ))}
+                <div className="min-w-0">
+                  <h2 className="truncate font-medium text-slate-950">
+                    {ticket.subject}
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Updated {new Date(ticket.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <p className="truncate text-sm text-muted-foreground">
+                  {ticket.requesterEmail}
+                </p>
+                <div>
+                  <Badge
+                    variant={
+                      ticket.status === TicketStatusValue.Open
+                        ? "outline"
+                        : "secondary"
+                    }
+                  >
+                    {ticketStatusLabels[ticket.status]}
+                  </Badge>
+                </div>
+                <div>
+                  <Badge variant="secondary">
+                    {ticket.category
+                      ? ticketCategoryLabels[ticket.category]
+                      : "Uncategorized"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(ticket.createdAt).toLocaleString()}
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function UserList({
+  currentUserId,
+  isDeactivating,
+  isDeleting,
+  onDeactivate,
+  onDelete,
+  onEdit,
+  users
+}: {
+  currentUserId?: string | null;
+  isDeactivating: boolean;
+  isDeleting: boolean;
+  onDeactivate: (selectedUser: HelpdeskUser) => Promise<void>;
+  onDelete: (selectedUser: HelpdeskUser) => void;
+  onEdit: (selectedUser: HelpdeskUser) => void;
+  users: HelpdeskUser[];
+}) {
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "createdAt", desc: true }
+  ]);
+  const columns = useMemo<ColumnDef<HelpdeskUser>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name"
+      },
+      {
+        accessorKey: "email",
+        header: "Email"
+      },
+      {
+        accessorKey: "role",
+        header: "Role"
+      },
+      {
+        accessorFn: (teamMember) => (teamMember.isActive ? "Active" : "Inactive"),
+        id: "isActive",
+        header: "Status"
+      },
+      {
+        accessorFn: (teamMember) => new Date(teamMember.createdAt).getTime(),
+        id: "createdAt",
+        header: "Added"
+      }
+    ],
+    []
+  );
+  const table = useReactTable({
+    columns,
+    data: users,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    state: { sorting }
+  });
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[58rem]">
+        {table.getHeaderGroups().map((headerGroup) => (
+          <div
+            className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2"
+            key={headerGroup.id}
+          >
+            {headerGroup.headers.map((header) => (
+              <SortableHeader
+                column={header.column}
+                key={header.id}
+                label={String(
+                  flexRender(header.column.columnDef.header, header.getContext())
+                )}
+              />
+            ))}
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Actions
+            </span>
+          </div>
+        ))}
+        <div className="divide-y">
+          {table.getRowModel().rows.map((row) => {
+            const teamMember = row.original;
+
+            return (
+              <article
+                className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] items-center gap-3 px-4 py-4"
+                key={teamMember.id}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate font-medium">{teamMember.name}</h2>
+                    {teamMember.id === currentUserId ? (
+                      <Badge variant="secondary">You</Badge>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="truncate text-sm text-muted-foreground">
+                  {teamMember.email}
+                </p>
+                <div>
+                  <Badge variant="secondary">
+                    {teamMember.role === "admin" ? "Admin" : "Agent"}
+                  </Badge>
+                </div>
+                <div>
+                  <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
+                    {teamMember.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(teamMember.createdAt).toLocaleDateString()}
+                </p>
+                <div className="flex justify-end">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={`Open actions for ${teamMember.name}`}
+                        className="size-8 p-0"
+                        type="button"
+                        variant="outline"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => onEdit(teamMember)}>
+                        <Pencil className="mr-2 size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      {teamMember.isActive && teamMember.id !== currentUserId ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            disabled={isDeactivating}
+                            onSelect={() => {
+                              void onDeactivate(teamMember);
+                            }}
+                          >
+                            <UserX className="mr-2 size-4" />
+                            Deactivate
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                      {teamMember.role === "agent" ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            disabled={isDeleting}
+                            onSelect={() => onDelete(teamMember)}
+                          >
+                            <Trash2 className="mr-2 size-4" />
+                            Delete user
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SortableHeader<TData>({
+  column,
+  label
+}: {
+  column: Column<TData, unknown>;
+  label: string;
+}) {
+  const sorted = column.getIsSorted();
+  const Icon = sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ArrowUpDown;
+
+  return (
+    <Button
+      aria-label={`Sort by ${label}`}
+      className="h-8 justify-start gap-1 px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      onClick={column.getToggleSortingHandler()}
+      type="button"
+      variant="ghost"
+    >
+      <span className="truncate">{label}</span>
+      <Icon className="size-3.5 shrink-0" />
+    </Button>
   );
 }
 

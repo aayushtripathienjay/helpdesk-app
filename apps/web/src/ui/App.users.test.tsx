@@ -118,6 +118,20 @@ describe("Users page", () => {
     expect(within(agentRow!).getByText("Active")).toBeVisible();
   });
 
+  test("user list can be sorted by name", async () => {
+    vi.mocked(listUsers).mockResolvedValue([adminUser, agentUser]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    expect(await screen.findByText("agent@example.com")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Sort by Name" }));
+
+    const userRows = await screen.findAllByRole("article");
+    expect(userRows[0]).toHaveTextContent("Admin User");
+    expect(userRows[1]).toHaveTextContent("Agent User");
+  });
+
   test("shows skeleton rows while users are loading", () => {
     vi.mocked(listUsers).mockReturnValue(new Promise<HelpdeskUser[]>(() => undefined));
 

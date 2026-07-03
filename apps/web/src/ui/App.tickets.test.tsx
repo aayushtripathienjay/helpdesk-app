@@ -158,6 +158,19 @@ describe("Tickets UI", () => {
     expect(ticketRows[2]).toHaveTextContent("Certificate name is incorrect");
   });
 
+  test("ticket list can be sorted by subject", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets");
+
+    expect(await screen.findByText("Cannot access my course")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Sort by Subject" }));
+
+    const ticketRows = await screen.findAllByRole("article");
+    expect(ticketRows[0]).toHaveTextContent("Cannot access my course");
+    expect(ticketRows[1]).toHaveTextContent("Certificate name is incorrect");
+    expect(ticketRows[2]).toHaveTextContent("Refund request for course purchase");
+  });
+
   test("status filter narrows the ticket list", async () => {
     const user = userEvent.setup();
     renderAppAt("/tickets");
