@@ -8,16 +8,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   type Column,
   type ColumnDef,
+  type PaginationState,
   type SortingState
 } from "@tanstack/react-table";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
   Headphones,
@@ -91,6 +95,8 @@ const queryKeys = {
   ],
   users: ["users"]
 } as const;
+
+const pageSizeOptions = [10, 25, 50];
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address"),
@@ -1076,6 +1082,10 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "createdAt", desc: true }
   ]);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10
+  });
   const columns = useMemo<ColumnDef<Ticket>[]>(
     () => [
       {
@@ -1116,77 +1126,94 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
     columns,
     data: tickets,
     getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    onPaginationChange: setPagination,
     onSortingChange: setSorting,
-    state: { sorting }
+    state: { pagination, sorting }
   });
 
   return (
-    <div className="overflow-x-auto bg-white">
-      <div className="min-w-[58rem]">
-        {table.getHeaderGroups().map((headerGroup) => (
-          <div
-            className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2"
-            key={headerGroup.id}
-          >
-            {headerGroup.headers.map((header) => (
-              <SortableHeader
-                column={header.column}
-                key={header.id}
-                label={String(
-                  flexRender(header.column.columnDef.header, header.getContext())
-                )}
-              />
-            ))}
-          </div>
-        ))}
-        <div className="divide-y">
-          {table.getRowModel().rows.map((row) => {
-            const ticket = row.original;
+    <>
+      <div className="overflow-x-auto bg-white">
+        <div className="min-w-[58rem]">
+          {table.getHeaderGroups().map((headerGroup) => (
+            <div
+              className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2"
+              key={headerGroup.id}
+            >
+              {headerGroup.headers.map((header) => (
+                <SortableHeader
+                  column={header.column}
+                  key={header.id}
+                  label={String(
+                    flexRender(header.column.columnDef.header, header.getContext())
+                  )}
+                />
+              ))}
+            </div>
+          ))}
+          <div className="divide-y">
+            {table.getRowModel().rows.map((row) => {
+              const ticket = row.original;
 
-            return (
-              <article
-                className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 px-4 py-4 transition-colors hover:bg-slate-50"
-                key={ticket.id}
-              >
-                <div className="min-w-0">
-                  <h2 className="truncate font-medium text-slate-950">
-                    {ticket.subject}
-                  </h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Updated {new Date(ticket.updatedAt).toLocaleString()}
+              return (
+                <article
+                  className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 px-4 py-4 transition-colors hover:bg-slate-50"
+                  key={ticket.id}
+                >
+                  <div className="min-w-0">
+                    <h2 className="truncate font-medium text-slate-950">
+                      {ticket.subject}
+                    </h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Updated {new Date(ticket.updatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {ticket.requesterEmail}
                   </p>
-                </div>
-                <p className="truncate text-sm text-muted-foreground">
-                  {ticket.requesterEmail}
-                </p>
-                <div>
-                  <Badge
-                    variant={
-                      ticket.status === TicketStatusValue.Open
-                        ? "outline"
-                        : "secondary"
-                    }
-                  >
-                    {ticketStatusLabels[ticket.status]}
-                  </Badge>
-                </div>
-                <div>
-                  <Badge variant="secondary">
-                    {ticket.category
-                      ? ticketCategoryLabels[ticket.category]
-                      : "Uncategorized"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(ticket.createdAt).toLocaleString()}
-                </p>
-              </article>
-            );
-          })}
+                  <div>
+                    <Badge
+                      variant={
+                        ticket.status === TicketStatusValue.Open
+                          ? "outline"
+                          : "secondary"
+                      }
+                    >
+                      {ticketStatusLabels[ticket.status]}
+                    </Badge>
+                  </div>
+                  <div>
+                    <Badge variant="secondary">
+                      {ticket.category
+                        ? ticketCategoryLabels[ticket.category]
+                        : "Uncategorized"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(ticket.createdAt).toLocaleString()}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
+      <PaginationControls
+        itemLabel="tickets"
+        pageIndex={table.getState().pagination.pageIndex}
+        pageSize={table.getState().pagination.pageSize}
+        pageSizeOptions={pageSizeOptions}
+        pageCount={table.getPageCount()}
+        totalItems={tickets.length}
+        canPreviousPage={table.getCanPreviousPage()}
+        canNextPage={table.getCanNextPage()}
+        onPreviousPage={() => table.previousPage()}
+        onNextPage={() => table.nextPage()}
+        onPageSizeChange={(pageSize) => table.setPageSize(pageSize)}
+      />
+    </>
   );
 }
 
@@ -1210,6 +1237,10 @@ function UserList({
   const [sorting, setSorting] = useState<SortingState>([
     { id: "createdAt", desc: true }
   ]);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10
+  });
   const columns = useMemo<ColumnDef<HelpdeskUser>[]>(
     () => [
       {
@@ -1241,117 +1272,218 @@ function UserList({
     columns,
     data: users,
     getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    onPaginationChange: setPagination,
     onSortingChange: setSorting,
-    state: { sorting }
+    state: { pagination, sorting }
   });
 
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[58rem]">
-        {table.getHeaderGroups().map((headerGroup) => (
-          <div
-            className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2"
-            key={headerGroup.id}
-          >
-            {headerGroup.headers.map((header) => (
-              <SortableHeader
-                column={header.column}
-                key={header.id}
-                label={String(
-                  flexRender(header.column.columnDef.header, header.getContext())
-                )}
-              />
-            ))}
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Actions
-            </span>
-          </div>
-        ))}
-        <div className="divide-y">
-          {table.getRowModel().rows.map((row) => {
-            const teamMember = row.original;
+    <>
+      <div className="overflow-x-auto">
+        <div className="min-w-[58rem]">
+          {table.getHeaderGroups().map((headerGroup) => (
+            <div
+              className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2"
+              key={headerGroup.id}
+            >
+              {headerGroup.headers.map((header) => (
+                <SortableHeader
+                  column={header.column}
+                  key={header.id}
+                  label={String(
+                    flexRender(header.column.columnDef.header, header.getContext())
+                  )}
+                />
+              ))}
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Actions
+              </span>
+            </div>
+          ))}
+          <div className="divide-y">
+            {table.getRowModel().rows.map((row) => {
+              const teamMember = row.original;
 
-            return (
-              <article
-                className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] items-center gap-3 px-4 py-4"
-                key={teamMember.id}
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate font-medium">{teamMember.name}</h2>
-                    {teamMember.id === currentUserId ? (
-                      <Badge variant="secondary">You</Badge>
-                    ) : null}
+              return (
+                <article
+                  className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] items-center gap-3 px-4 py-4"
+                  key={teamMember.id}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate font-medium">{teamMember.name}</h2>
+                      {teamMember.id === currentUserId ? (
+                        <Badge variant="secondary">You</Badge>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-                <p className="truncate text-sm text-muted-foreground">
-                  {teamMember.email}
-                </p>
-                <div>
-                  <Badge variant="secondary">
-                    {teamMember.role === "admin" ? "Admin" : "Agent"}
-                  </Badge>
-                </div>
-                <div>
-                  <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
-                    {teamMember.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(teamMember.createdAt).toLocaleDateString()}
-                </p>
-                <div className="flex justify-end">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-label={`Open actions for ${teamMember.name}`}
-                        className="size-8 p-0"
-                        type="button"
-                        variant="outline"
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onEdit(teamMember)}>
-                        <Pencil className="mr-2 size-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      {teamMember.isActive && teamMember.id !== currentUserId ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            disabled={isDeactivating}
-                            onSelect={() => {
-                              void onDeactivate(teamMember);
-                            }}
-                          >
-                            <UserX className="mr-2 size-4" />
-                            Deactivate
-                          </DropdownMenuItem>
-                        </>
-                      ) : null}
-                      {teamMember.role === "agent" ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            disabled={isDeleting}
-                            onSelect={() => onDelete(teamMember)}
-                          >
-                            <Trash2 className="mr-2 size-4" />
-                            Delete user
-                          </DropdownMenuItem>
-                        </>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </article>
-            );
-          })}
+                  <p className="truncate text-sm text-muted-foreground">
+                    {teamMember.email}
+                  </p>
+                  <div>
+                    <Badge variant="secondary">
+                      {teamMember.role === "admin" ? "Admin" : "Agent"}
+                    </Badge>
+                  </div>
+                  <div>
+                    <Badge variant={teamMember.isActive ? "outline" : "destructive"}>
+                      {teamMember.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(teamMember.createdAt).toLocaleDateString()}
+                  </p>
+                  <div className="flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Open actions for ${teamMember.name}`}
+                          className="size-8 p-0"
+                          type="button"
+                          variant="outline"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => onEdit(teamMember)}>
+                          <Pencil className="mr-2 size-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        {teamMember.isActive && teamMember.id !== currentUserId ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              disabled={isDeactivating}
+                              onSelect={() => {
+                                void onDeactivate(teamMember);
+                              }}
+                            >
+                              <UserX className="mr-2 size-4" />
+                              Deactivate
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                        {teamMember.role === "agent" ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              disabled={isDeleting}
+                              onSelect={() => onDelete(teamMember)}
+                            >
+                              <Trash2 className="mr-2 size-4" />
+                              Delete user
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <PaginationControls
+        itemLabel="users"
+        pageIndex={table.getState().pagination.pageIndex}
+        pageSize={table.getState().pagination.pageSize}
+        pageSizeOptions={pageSizeOptions}
+        pageCount={table.getPageCount()}
+        totalItems={users.length}
+        canPreviousPage={table.getCanPreviousPage()}
+        canNextPage={table.getCanNextPage()}
+        onPreviousPage={() => table.previousPage()}
+        onNextPage={() => table.nextPage()}
+        onPageSizeChange={(pageSize) => table.setPageSize(pageSize)}
+      />
+    </>
+  );
+}
+
+function PaginationControls({
+  canNextPage,
+  canPreviousPage,
+  itemLabel,
+  onNextPage,
+  onPageSizeChange,
+  onPreviousPage,
+  pageCount,
+  pageIndex,
+  pageSize,
+  pageSizeOptions,
+  totalItems
+}: {
+  canNextPage: boolean;
+  canPreviousPage: boolean;
+  itemLabel: string;
+  onNextPage: () => void;
+  onPageSizeChange: (pageSize: number) => void;
+  onPreviousPage: () => void;
+  pageCount: number;
+  pageIndex: number;
+  pageSize: number;
+  pageSizeOptions: number[];
+  totalItems: number;
+}) {
+  const firstItem = totalItems === 0 ? 0 : pageIndex * pageSize + 1;
+  const lastItem = Math.min(totalItems, (pageIndex + 1) * pageSize);
+
+  return (
+    <div className="flex flex-col gap-3 border-t bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-muted-foreground">
+        Showing {firstItem}-{lastItem} of {totalItems} {itemLabel}
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground" htmlFor={`${itemLabel}-page-size`}>
+            Rows
+          </Label>
+          <Select
+            onValueChange={(value) => onPageSizeChange(Number(value))}
+            value={String(pageSize)}
+          >
+            <SelectTrigger className="h-9 w-20" id={`${itemLabel}-page-size`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {pageSizeOptions.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <p className="min-w-24 text-sm text-muted-foreground">
+          Page {pageCount === 0 ? 0 : pageIndex + 1} of {pageCount}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            aria-label={`Previous ${itemLabel} page`}
+            disabled={!canPreviousPage}
+            onClick={onPreviousPage}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            aria-label={`Next ${itemLabel} page`}
+            disabled={!canNextPage}
+            onClick={onNextPage}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
         </div>
       </div>
     </div>

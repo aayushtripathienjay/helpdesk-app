@@ -95,6 +95,28 @@ const tickets: Ticket[] = [
   }
 ];
 
+function createTicket(index: number): Ticket {
+  return {
+    id: `ticket-${index}`,
+    subject: `Generated ticket ${String(index).padStart(2, "0")}`,
+    requesterEmail: `student.${index}@example.com`,
+    status:
+      index % 3 === 0
+        ? TicketStatusValue.Closed
+        : index % 2 === 0
+          ? TicketStatusValue.Resolved
+          : TicketStatusValue.Open,
+    category:
+      index % 3 === 0
+        ? TicketCategoryValue.RefundRequest
+        : index % 2 === 0
+          ? TicketCategoryValue.GeneralQuestion
+          : TicketCategoryValue.TechnicalQuestion,
+    createdAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString()
+  };
+}
+
 function filterTickets(filters: TicketFilters = {}) {
   return tickets.filter((ticket) => {
     const matchesStatus =
@@ -169,6 +191,25 @@ describe("Tickets UI", () => {
     expect(ticketRows[0]).toHaveTextContent("Cannot access my course");
     expect(ticketRows[1]).toHaveTextContent("Certificate name is incorrect");
     expect(ticketRows[2]).toHaveTextContent("Refund request for course purchase");
+  });
+
+  test("ticket list paginates longer result sets", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listTickets).mockResolvedValue(Array.from({ length: 12 }, (_, index) =>
+      createTicket(index + 1)
+    ));
+
+    renderAppAt("/tickets");
+
+    expect(await screen.findByText("Showing 1-10 of 12 tickets")).toBeVisible();
+    expect(screen.getByText("Generated ticket 01")).toBeVisible();
+    expect(screen.queryByText("Generated ticket 11")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next tickets page" }));
+
+    expect(await screen.findByText("Showing 11-12 of 12 tickets")).toBeVisible();
+    expect(screen.getByText("Generated ticket 11")).toBeVisible();
+    expect(screen.getByText("Generated ticket 12")).toBeVisible();
   });
 
   test("status filter narrows the ticket list", async () => {

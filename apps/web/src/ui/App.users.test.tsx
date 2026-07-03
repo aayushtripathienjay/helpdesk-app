@@ -84,6 +84,19 @@ const agentUser: HelpdeskUser = {
   updatedAt: "2026-07-02T00:00:00.000Z"
 };
 
+function createAgent(index: number): HelpdeskUser {
+  return {
+    id: `agent-${index}`,
+    name: `Agent ${String(index).padStart(2, "0")}`,
+    email: `agent.${index}@example.com`,
+    emailVerified: true,
+    role: "agent",
+    isActive: index % 4 !== 0,
+    createdAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString()
+  };
+}
+
 function renderUsersPage() {
   return renderWithQuery(<App />, {
     initialEntries: ["/users"]
@@ -130,6 +143,27 @@ describe("Users page", () => {
     const userRows = await screen.findAllByRole("article");
     expect(userRows[0]).toHaveTextContent("Admin User");
     expect(userRows[1]).toHaveTextContent("Agent User");
+  });
+
+  test("user list paginates longer result sets", async () => {
+    vi.mocked(listUsers).mockResolvedValue([
+      adminUser,
+      ...Array.from({ length: 11 }, (_, index) => createAgent(index + 1))
+    ]);
+
+    const user = userEvent.setup();
+    renderUsersPage();
+
+    expect(await screen.findByText("Showing 1-10 of 12 users")).toBeVisible();
+    expect(screen.getByText("Agent 01")).toBeVisible();
+    expect(screen.queryByText("Agent 11")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next users page" }));
+
+    expect(await screen.findByText("Showing 11-12 of 12 users")).toBeVisible();
+    const userRows = await screen.findAllByRole("article");
+    expect(userRows[0]).toHaveTextContent("Agent 11");
+    expect(userRows[1]).toHaveTextContent("Admin User");
   });
 
   test("shows skeleton rows while users are loading", () => {
