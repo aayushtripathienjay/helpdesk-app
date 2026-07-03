@@ -42,6 +42,19 @@ export type Ticket = {
   updatedAt: string;
 };
 
+export type TicketMessage = {
+  id: string;
+  direction: "inbound" | "outbound";
+  senderEmail: string;
+  body: string;
+  externalId: string | null;
+  createdAt: string;
+};
+
+export type TicketDetails = Ticket & {
+  messages: TicketMessage[];
+};
+
 export type TicketFilters = {
   category?: TicketCategory | "all";
   status?: TicketStatus | "all";
@@ -65,5 +78,16 @@ export async function listTickets(filters: TicketFilters = {}): Promise<Ticket[]
     return response.data.data;
   } catch {
     throw new Error("Failed to load tickets");
+  }
+}
+
+export async function getTicket(ticketId: string): Promise<TicketDetails> {
+  try {
+    const response = await axios.get<{ data: TicketDetails }>(
+      `/api/tickets/${ticketId}`
+    );
+    return response.data.data;
+  } catch {
+    throw new Error("Failed to load ticket");
   }
 }

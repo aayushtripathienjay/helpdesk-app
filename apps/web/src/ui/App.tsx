@@ -18,6 +18,7 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   ChevronLeft,
@@ -34,10 +35,19 @@ import {
   UserX
 } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router";
+import {
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+  useSearchParams
+} from "react-router";
 import { z } from "zod";
 import { authClient } from "../api/auth";
 import {
+  getTicket,
   listTickets,
   ticketCategories,
   ticketCategoryLabels,
@@ -46,6 +56,7 @@ import {
   TicketStatusValue,
   type Ticket,
   type TicketCategory,
+  type TicketDetails,
   type TicketStatus
 } from "../api/tickets";
 import {
@@ -89,6 +100,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const queryKeys = {
+  ticket: (ticketId: string) => ["ticket", ticketId],
   tickets: (filters?: { category?: string; status?: string }) => [
     "tickets",
     filters ?? {}
@@ -186,6 +198,14 @@ export function App() {
         element={
           <RequireAuth>
             <TicketsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/tickets/:ticketId"
+        element={
+          <RequireAuth>
+            <TicketDetailsPage />
           </RequireAuth>
         }
       />
@@ -559,7 +579,7 @@ function TicketsPage() {
             </p>
           </div>
           <Button asChild variant="outline">
-            <a href="/">Dashboard</a>
+            <Link to="/">Dashboard</Link>
           </Button>
         </header>
 
@@ -652,6 +672,143 @@ function TicketsPage() {
         </Card>
       </div>
     </main>
+  );
+}
+
+function TicketDetailsPage() {
+  const { data: session } = authClient.useSession();
+  const user = getSessionUser(session);
+  const { ticketId } = useParams();
+  const {
+    data: ticket,
+    error,
+    isLoading
+  } = useQuery({
+    enabled: Boolean(ticketId),
+    queryKey: queryKeys.ticket(ticketId ?? ""),
+    queryFn: () => getTicket(ticketId ?? "")
+  });
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <Nav isAdmin={isAdminSession(session)} userName={user?.name ?? "User"} />
+
+        <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+              Ticket
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+              Ticket Details
+            </h1>
+          </div>
+          <Button asChild variant="outline">
+            <Link to="/tickets">
+              <ArrowLeft className="mr-2 size-4" />
+              Tickets
+            </Link>
+          </Button>
+        </header>
+
+        {isLoading ? (
+          <TicketDetailsSkeleton />
+        ) : error || !ticket ? (
+          <Card className="border-slate-200 shadow-sm">
+            <StateMessage message={getErrorMessage(error, "Ticket not found")} />
+          </Card>
+        ) : (
+          <TicketDetailsContent ticket={ticket} />
+        )}
+      </div>
+    </main>
+  );
+}
+
+function TicketDetailsContent({ ticket }: { ticket: TicketDetails }) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <Card className="overflow-hidden border-slate-200 shadow-sm">
+        <CardHeader className="border-b bg-white px-4 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <CardTitle className="text-xl leading-7">{ticket.subject}</CardTitle>
+              <CardDescription className="mt-2">
+                From {ticket.requesterEmail}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  ticket.status === TicketStatusValue.Open ? "outline" : "secondary"
+                }
+              >
+                {ticketStatusLabels[ticket.status]}
+              </Badge>
+              <Badge variant="secondary">
+                {ticket.category
+                  ? ticketCategoryLabels[ticket.category]
+                  : "Uncategorized"}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 bg-white p-4">
+          {ticket.messages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No messages yet.</p>
+          ) : (
+            ticket.messages.map((message) => (
+              <article
+                className="rounded-md border border-slate-200 bg-slate-50 p-4"
+                key={message.id}
+              >
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={
+                        message.direction === "inbound" ? "outline" : "secondary"
+                      }
+                    >
+                      {message.direction === "inbound" ? "Customer" : "Support"}
+                    </Badge>
+                    <p className="text-sm font-medium">{message.senderEmail}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(message.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                  {message.body}
+                </p>
+              </article>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="h-fit border-slate-200 shadow-sm">
+        <CardHeader className="border-b bg-white px-4 py-4">
+          <CardTitle className="text-base">Properties</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 bg-white p-4 text-sm">
+          <TicketProperty label="Requester" value={ticket.requesterEmail} />
+          <TicketProperty label="Created" value={new Date(ticket.createdAt).toLocaleString()} />
+          <TicketProperty label="Updated" value={new Date(ticket.updatedAt).toLocaleString()} />
+          <TicketProperty label="Ticket ID" value={ticket.id} />
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function TicketProperty({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 break-words text-slate-900">{value}</p>
+    </div>
   );
 }
 
@@ -1135,11 +1292,11 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
 
   return (
     <>
-      <div className="overflow-x-auto bg-white">
+      <div className="max-h-[62vh] overflow-auto bg-white">
         <div className="min-w-[58rem]">
           {table.getHeaderGroups().map((headerGroup) => (
             <div
-              className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2"
+              className="sticky top-0 z-10 grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2 shadow-sm"
               key={headerGroup.id}
             >
               {headerGroup.headers.map((header) => (
@@ -1163,9 +1320,12 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
                   key={ticket.id}
                 >
                   <div className="min-w-0">
-                    <h2 className="truncate font-medium text-slate-950">
+                    <Link
+                      className="block truncate font-medium text-slate-950 underline-offset-4 hover:text-teal-800 hover:underline focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2"
+                      to={`/tickets/${ticket.id}`}
+                    >
                       {ticket.subject}
-                    </h2>
+                    </Link>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Updated {new Date(ticket.updatedAt).toLocaleString()}
                     </p>
@@ -1281,11 +1441,11 @@ function UserList({
 
   return (
     <>
-      <div className="overflow-x-auto">
+      <div className="max-h-[62vh] overflow-auto bg-white">
         <div className="min-w-[58rem]">
           {table.getHeaderGroups().map((headerGroup) => (
             <div
-              className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2"
+              className="sticky top-0 z-10 grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2 shadow-sm"
               key={headerGroup.id}
             >
               {headerGroup.headers.map((header) => (
@@ -1533,8 +1693,8 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   }
 
   return (
-    <nav className="sticky top-4 z-50 flex flex-col gap-4 rounded-lg border border-slate-800 bg-[#172026] px-4 py-3 text-white shadow-lg shadow-slate-900/10 sm:flex-row sm:items-center sm:justify-between">
-      <a className="flex items-center gap-3 text-white" href="/">
+    <nav className="sticky top-0 z-50 flex flex-col gap-4 border border-slate-800 bg-[#172026] px-4 py-3 text-white shadow-lg shadow-slate-900/15 sm:top-4 sm:rounded-lg sm:flex-row sm:items-center sm:justify-between">
+      <Link className="flex items-center gap-3 text-white" to="/">
         <span className="grid size-10 place-items-center rounded-lg bg-teal-700 text-base font-semibold text-white shadow-sm ring-1 ring-white/15">
           H
         </span>
@@ -1544,14 +1704,14 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
             Support console
           </span>
         </span>
-      </a>
+      </Link>
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
         <Button
           asChild
           className="h-8 border-white/15 bg-white/10 px-3 text-sm text-white shadow-sm hover:bg-white/15 hover:text-white"
           variant="outline"
         >
-          <a href="/tickets">Tickets</a>
+          <Link to="/tickets">Tickets</Link>
         </Button>
         {isAdmin ? (
           <Button
@@ -1559,7 +1719,7 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
             className="h-8 border-white/15 bg-white/10 px-3 text-sm text-white shadow-sm hover:bg-white/15 hover:text-white"
             variant="outline"
           >
-            <a href="/users">Users</a>
+            <Link to="/users">Users</Link>
           </Button>
         ) : null}
         <Badge className="border-white/10 bg-white/10 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-white/10">
@@ -1593,12 +1753,12 @@ function Metric({
   value: number;
 }) {
   return (
-    <a
+    <Link
       className={cn(
         "block rounded-lg border bg-white text-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-teal-700/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2",
         active && "border-teal-700 bg-teal-50"
       )}
-      href={href}
+      to={href}
     >
       <CardContent className="px-4 py-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1608,7 +1768,7 @@ function Metric({
           {loading ? "..." : value}
         </p>
       </CardContent>
-    </a>
+    </Link>
   );
 }
 
@@ -1635,6 +1795,41 @@ function TicketListSkeleton() {
         </div>
       ))}
     </div>
+  );
+}
+
+function TicketDetailsSkeleton() {
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <Card className="overflow-hidden border-slate-200 shadow-sm">
+        <CardHeader className="border-b bg-white px-4 py-4">
+          <Skeleton className="h-7 w-3/4 max-w-2xl" />
+          <Skeleton className="mt-3 h-4 w-64" />
+        </CardHeader>
+        <CardContent className="space-y-4 bg-white p-4">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-4" key={index}>
+              <div className="flex justify-between gap-3">
+                <Skeleton className="h-6 w-44" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <Skeleton className="mt-4 h-4 w-full" />
+              <Skeleton className="mt-2 h-4 w-5/6" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+      <Card className="h-fit border-slate-200 shadow-sm">
+        <CardHeader className="border-b bg-white px-4 py-4">
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent className="space-y-4 bg-white p-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 

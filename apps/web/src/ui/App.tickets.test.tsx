@@ -3,15 +3,18 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { App } from "./App";
 import {
+  getTicket,
   listTickets,
   TicketCategoryValue,
   TicketStatusValue,
   type Ticket,
+  type TicketDetails,
   type TicketFilters
 } from "../api/tickets";
 import { renderWithQuery } from "../test/render-with-query";
 
 const mocks = vi.hoisted(() => ({
+  getTicket: vi.fn(),
   listTickets: vi.fn(),
   signOut: vi.fn()
 }));
@@ -47,6 +50,7 @@ vi.mock("../api/tickets", () => {
   } as const;
 
   return {
+    getTicket: mocks.getTicket,
     listTickets: mocks.listTickets,
     TicketCategoryValue,
     ticketCategories: Object.values(TicketCategoryValue),
@@ -95,6 +99,20 @@ const tickets: Ticket[] = [
   }
 ];
 
+const ticketDetails: TicketDetails = {
+  ...tickets[0],
+  messages: [
+    {
+      id: "message-1",
+      body: "I cannot access the course dashboard after resetting my password.",
+      createdAt: "2026-07-03T10:01:00.000Z",
+      direction: "inbound",
+      externalId: null,
+      senderEmail: "student.access@example.com"
+    }
+  ]
+};
+
 function createTicket(index: number): Ticket {
   return {
     id: `ticket-${index}`,
@@ -138,6 +156,8 @@ function renderAppAt(path: string) {
 
 describe("Tickets UI", () => {
   beforeEach(() => {
+    vi.mocked(getTicket).mockReset();
+    vi.mocked(getTicket).mockResolvedValue(ticketDetails);
     vi.mocked(listTickets).mockReset();
     vi.mocked(listTickets).mockImplementation((filters?: TicketFilters) =>
       Promise.resolve(filterTickets(filters))
@@ -191,6 +211,18 @@ describe("Tickets UI", () => {
     expect(ticketRows[0]).toHaveTextContent("Cannot access my course");
     expect(ticketRows[1]).toHaveTextContent("Certificate name is incorrect");
     expect(ticketRows[2]).toHaveTextContent("Refund request for course purchase");
+  });
+
+  test("clicking a ticket subject opens the ticket details page", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets");
+
+    await user.click(await screen.findByRole("link", { name: "Cannot access my course" }));
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    expect(screen.getAllByText("student.access@example.com").length).toBeGreaterThan(0);
+    expect(screen.getByText(/course dashboard after resetting/)).toBeVisible();
+    expect(vi.mocked(getTicket)).toHaveBeenCalledWith("ticket-newest");
   });
 
   test("ticket list paginates longer result sets", async () => {
