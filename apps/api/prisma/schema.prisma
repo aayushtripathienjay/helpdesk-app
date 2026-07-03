@@ -43,6 +43,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  assignedTickets Ticket[] @relation("TicketAssignee")
 }
 
 model Session {
@@ -96,13 +97,16 @@ model Ticket {
   requesterEmail String
   status         TicketStatus     @default(open)
   category       TicketCategory?
+  assignedToId   String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+  assignedTo      User?            @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages       TicketMessage[]
   aiSuggestions  AiSuggestion[]
 
   @@index([status])
   @@index([category])
+  @@index([assignedToId])
   @@index([createdAt])
 }
 

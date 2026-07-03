@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { Prisma, TicketCategory, TicketStatus } from "@prisma/client";
+import { fromNodeHeaders } from "better-auth/node";
+import { Prisma, TicketCategory, TicketStatus, UserRole } from "@prisma/client";
+import { auth } from "../auth";
 import { config } from "../config";
 import { ticketCategories, ticketStatuses } from "../domain/tickets";
 import { prisma } from "../db/prisma";
@@ -13,8 +15,41 @@ const ticketSelect = {
   requesterEmail: true,
   status: true,
   category: true,
+  assignedToId: true,
+  assignedTo: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true
+    }
+  },
   createdAt: true,
   updatedAt: true
+} satisfies Prisma.TicketSelect;
+
+const assignableAgentSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  isActive: true
+} satisfies Prisma.UserSelect;
+
+const ticketDetailsSelect = {
+  ...ticketSelect,
+  messages: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      direction: true,
+      senderEmail: true,
+      body: true,
+      externalId: true,
+      createdAt: true
+    }
+  }
 } satisfies Prisma.TicketSelect;
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -85,23 +120,24 @@ ticketsRouter.get("/", async (request, response) => {
   });
 });
 
+ticketsRouter.get("/agents", async (_request, response) => {
+  const agents = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      isActive: true,
+      role: { in: [UserRole.admin, UserRole.agent] }
+    },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+    select: assignableAgentSelect
+  });
+
+  response.json({ data: agents });
+});
+
 ticketsRouter.get("/:ticketId", async (request, response) => {
   const ticket = await prisma.ticket.findUnique({
     where: { id: request.params.ticketId },
-    select: {
-      ...ticketSelect,
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          direction: true,
-          senderEmail: true,
-          body: true,
-          externalId: true,
-          createdAt: true
-        }
-      }
-    }
+    select: ticketDetailsSelect
   });
 
   if (!ticket) {
@@ -110,6 +146,137 @@ ticketsRouter.get("/:ticketId", async (request, response) => {
   }
 
   response.json({ data: ticket });
+});
+
+ticketsRouter.patch("/:ticketId", async (request, response) => {
+  if (!isObject(request.body)) {
+    response.status(400).json({ error: "Request body is required" });
+    return;
+  }
+
+  const assignedToId = readString(request.body, "assignedToId");
+  const status = readTicketStatus(request.body.status);
+  const category = readTicketCategory(request.body.category);
+  const shouldUpdateAssignment = "assignedToId" in request.body;
+  const shouldUnassign = request.body.assignedToId === null || assignedToId === "";
+  const shouldUpdateCategory = "category" in request.body;
+  const shouldClearCategory = request.body.category === null || request.body.category === "";
+
+  if (shouldUpdateAssignment && !shouldUnassign && !assignedToId) {
+    response.status(400).json({ error: "assignedToId is required" });
+    return;
+  }
+
+  if ("status" in request.body && !status) {
+    response.status(400).json({ error: "Invalid ticket status" });
+    return;
+  }
+
+  if (shouldUpdateCategory && !shouldClearCategory && !category) {
+    response.status(400).json({ error: "Invalid ticket category" });
+    return;
+  }
+
+  if (assignedToId && shouldUpdateAssignment && !shouldUnassign) {
+    const agent = await prisma.user.findFirst({
+      where: {
+        id: assignedToId,
+        deletedAt: null,
+        isActive: true,
+        role: { in: [UserRole.admin, UserRole.agent] }
+      },
+      select: { id: true }
+    });
+
+    if (!agent) {
+      response.status(400).json({ error: "Assigned user must be an active agent" });
+      return;
+    }
+  }
+
+  try {
+    const data: Prisma.TicketUpdateInput = {};
+
+    if (shouldUpdateAssignment) {
+      data.assignedTo = shouldUnassign
+        ? { disconnect: true }
+        : { connect: { id: assignedToId } };
+    }
+
+    if (status) {
+      data.status = status;
+    }
+
+    if (shouldUpdateCategory) {
+      data.category = shouldClearCategory ? null : category;
+    }
+
+    const ticket = await prisma.ticket.update({
+      where: { id: request.params.ticketId },
+      data,
+      select: ticketDetailsSelect
+    });
+
+    response.json({ data: ticket });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      response.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    throw error;
+  }
+});
+
+ticketsRouter.post("/:ticketId/messages", async (request, response) => {
+  if (!isObject(request.body)) {
+    response.status(400).json({ error: "Request body is required" });
+    return;
+  }
+
+  const body = readString(request.body, "body");
+
+  if (!body) {
+    response.status(400).json({ error: "Reply body is required" });
+    return;
+  }
+
+  const session = await auth.api.getSession({
+    headers: fromNodeHeaders(request.headers)
+  });
+  const senderEmail = session?.user.email ?? config.supportEmail;
+
+  try {
+    await prisma.ticketMessage.create({
+      data: {
+        ticketId: request.params.ticketId,
+        direction: "outbound",
+        senderEmail,
+        body
+      }
+    });
+
+    const ticket = await prisma.ticket.update({
+      where: { id: request.params.ticketId },
+      data: { updatedAt: new Date() },
+      select: ticketDetailsSelect
+    });
+
+    response.status(201).json({ data: ticket });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2003" || error.code === "P2025")
+    ) {
+      response.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    throw error;
+  }
 });
 
 inboundEmailRouter.post("/", async (request, response) => {

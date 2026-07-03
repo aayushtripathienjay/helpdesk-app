@@ -139,6 +139,57 @@ React components should use TanStack Query for API-backed server state:
 create/update/delete actions. Avoid manual `useEffect` fetches plus duplicated
 local state for API data unless there is a specific reason.
 
+## Ticket Module
+
+The ticket module currently includes:
+
+- Dashboard scorecards for total, open, and resolved tickets.
+- Smooth React Router navigation for scorecards, navbar links, ticket subjects, and ticket detail back links.
+- Ticket queue with status/category filtering.
+- Ticket queue search across subject, From email, status, category, assignee name, and assignee email.
+- TanStack Table sorting and pagination on ticket and user list views.
+- Ticket queue page sizes of 10, 25, and 50 rows.
+- Internal table scroll regions with sticky table headers so larger page sizes do not push the whole page down.
+- `From` is the displayed label for the requester email column.
+- Ticket detail pages at `/tickets/:ticketId`.
+- Ticket detail view with subject, From email, status, category, assignee, created/updated timestamps, ticket ID, and message thread.
+- Editable ticket assignment from the detail page.
+- Editable ticket status from the detail page.
+- Editable ticket category from the detail page, including clearing to uncategorized.
+- Reply thread on the ticket detail page.
+- Support reply form below the thread.
+- Outbound support replies persisted as ticket messages.
+
+Ticket statuses:
+
+- `open`
+- `resolved`
+- `closed`
+
+Ticket categories:
+
+- `general_question`
+- `technical_question`
+- `refund_request`
+
+Ticket API endpoints:
+
+- `GET /api/tickets` - list tickets, ordered newest first, with optional `status` and `category` filters.
+- `GET /api/tickets/agents` - list active admins/agents assignable to tickets.
+- `GET /api/tickets/:ticketId` - get ticket details with ordered messages.
+- `PATCH /api/tickets/:ticketId` - update assignment, status, and/or category.
+- `POST /api/tickets/:ticketId/messages` - create an outbound support reply.
+- `POST /api/inbound-email` - receive inbound support email and create tickets/messages.
+
+Important ticket files:
+
+- `apps/web/src/api/tickets.ts` - frontend ticket API helpers and shared ticket types.
+- `apps/web/src/ui/App.tsx` - ticket queue, details, property updates, reply form, pagination, search, and table UI.
+- `apps/web/src/ui/App.tickets.test.tsx` - ticket component tests.
+- `apps/api/src/routes/tickets.ts` - ticket API routes.
+- `apps/api/src/scripts/sample-tickets.ts` - deterministic realistic sample ticket seed.
+- `apps/api/prisma/schema.prisma` - ticket, message, and assignee schema.
+
 ## Database
 
 Local PostgreSQL runs in Docker and is exposed on `localhost:5432`.
@@ -165,6 +216,10 @@ The app tables are under the `helpdesk` database, `public` schema:
 
 User roles are stored in the `User.role` column using the Prisma `UserRole` enum.
 
+Ticket assignment is stored on `Ticket.assignedToId`, a nullable relation to
+`User`. Ticket replies are stored in `TicketMessage`; customer emails use
+`direction = inbound`, and support replies use `direction = outbound`.
+
 Useful query:
 
 ```sql
@@ -178,6 +233,8 @@ The project currently has:
 
 - Initial schema migration
 - Better Auth migration for `User`, `Account`, `Session`, and `Verification`
+- User soft-delete migration
+- Ticket assignee migration `20260704000000_add_ticket_assignee`
 
 Run migrations with:
 

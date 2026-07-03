@@ -4,19 +4,25 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { App } from "./App";
 import {
   getTicket,
+  listAssignableAgents,
   listTickets,
+  replyToTicket,
   TicketCategoryValue,
   TicketStatusValue,
   type Ticket,
   type TicketDetails,
-  type TicketFilters
+  type TicketFilters,
+  updateTicket
 } from "../api/tickets";
 import { renderWithQuery } from "../test/render-with-query";
 
 const mocks = vi.hoisted(() => ({
   getTicket: vi.fn(),
+  listAssignableAgents: vi.fn(),
   listTickets: vi.fn(),
-  signOut: vi.fn()
+  replyToTicket: vi.fn(),
+  signOut: vi.fn(),
+  updateTicket: vi.fn()
 }));
 
 vi.mock("../api/auth", () => ({
@@ -51,7 +57,9 @@ vi.mock("../api/tickets", () => {
 
   return {
     getTicket: mocks.getTicket,
+    listAssignableAgents: mocks.listAssignableAgents,
     listTickets: mocks.listTickets,
+    replyToTicket: mocks.replyToTicket,
     TicketCategoryValue,
     ticketCategories: Object.values(TicketCategoryValue),
     ticketCategoryLabels: {
@@ -65,7 +73,8 @@ vi.mock("../api/tickets", () => {
       [TicketStatusValue.Closed]: "Closed"
     },
     ticketStatuses: Object.values(TicketStatusValue),
-    TicketStatusValue
+    TicketStatusValue,
+    updateTicket: mocks.updateTicket
   };
 });
 
@@ -76,6 +85,8 @@ const tickets: Ticket[] = [
     requesterEmail: "student.access@example.com",
     status: TicketStatusValue.Open,
     category: TicketCategoryValue.TechnicalQuestion,
+    assignedToId: null,
+    assignedTo: null,
     createdAt: "2026-07-03T10:00:00.000Z",
     updatedAt: "2026-07-03T10:00:00.000Z"
   },
@@ -85,6 +96,14 @@ const tickets: Ticket[] = [
     requesterEmail: "billing.student@example.com",
     status: TicketStatusValue.Resolved,
     category: TicketCategoryValue.RefundRequest,
+    assignedToId: "agent-1",
+    assignedTo: {
+      id: "agent-1",
+      name: "Agent User",
+      email: "agent@example.com",
+      role: "agent",
+      isActive: true
+    },
     createdAt: "2026-07-03T09:00:00.000Z",
     updatedAt: "2026-07-03T09:00:00.000Z"
   },
@@ -94,6 +113,8 @@ const tickets: Ticket[] = [
     requesterEmail: "certificate.student@example.com",
     status: TicketStatusValue.Open,
     category: TicketCategoryValue.GeneralQuestion,
+    assignedToId: null,
+    assignedTo: null,
     createdAt: "2026-07-03T08:00:00.000Z",
     updatedAt: "2026-07-03T08:00:00.000Z"
   }
@@ -130,6 +151,8 @@ function createTicket(index: number): Ticket {
         : index % 2 === 0
           ? TicketCategoryValue.GeneralQuestion
           : TicketCategoryValue.TechnicalQuestion,
+    assignedToId: null,
+    assignedTo: null,
     createdAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString()
   };
@@ -156,8 +179,45 @@ function renderAppAt(path: string) {
 
 describe("Tickets UI", () => {
   beforeEach(() => {
+    vi.mocked(updateTicket).mockReset();
+    vi.mocked(updateTicket).mockResolvedValue({
+      ...ticketDetails,
+      assignedToId: "agent-1",
+      assignedTo: {
+        id: "agent-1",
+        name: "Agent User",
+        email: "agent@example.com",
+        role: "agent",
+        isActive: true
+      }
+    });
+    vi.mocked(replyToTicket).mockReset();
+    vi.mocked(replyToTicket).mockResolvedValue({
+      ...ticketDetails,
+      messages: [
+        ...ticketDetails.messages,
+        {
+          id: "message-2",
+          body: "Thanks, I reset the course enrollment state for your account.",
+          createdAt: "2026-07-03T10:05:00.000Z",
+          direction: "outbound",
+          externalId: null,
+          senderEmail: "admin@example.com"
+        }
+      ]
+    });
     vi.mocked(getTicket).mockReset();
     vi.mocked(getTicket).mockResolvedValue(ticketDetails);
+    vi.mocked(listAssignableAgents).mockReset();
+    vi.mocked(listAssignableAgents).mockResolvedValue([
+      {
+        id: "agent-1",
+        name: "Agent User",
+        email: "agent@example.com",
+        role: "agent",
+        isActive: true
+      }
+    ]);
     vi.mocked(listTickets).mockReset();
     vi.mocked(listTickets).mockImplementation((filters?: TicketFilters) =>
       Promise.resolve(filterTickets(filters))
@@ -213,6 +273,18 @@ describe("Tickets UI", () => {
     expect(ticketRows[2]).toHaveTextContent("Refund request for course purchase");
   });
 
+  test("ticket list can be searched by subject and from email", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets");
+
+    await screen.findByText("Cannot access my course");
+    await user.type(screen.getByLabelText("Search"), "billing");
+
+    const ticketRows = await screen.findAllByRole("article");
+    expect(ticketRows).toHaveLength(1);
+    expect(ticketRows[0]).toHaveTextContent("Refund request for course purchase");
+  });
+
   test("clicking a ticket subject opens the ticket details page", async () => {
     const user = userEvent.setup();
     renderAppAt("/tickets");
@@ -223,6 +295,64 @@ describe("Tickets UI", () => {
     expect(screen.getAllByText("student.access@example.com").length).toBeGreaterThan(0);
     expect(screen.getByText(/course dashboard after resetting/)).toBeVisible();
     expect(vi.mocked(getTicket)).toHaveBeenCalledWith("ticket-newest");
+  });
+
+  test("ticket details can assign a ticket to an agent", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets/ticket-newest");
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    await user.click(await screen.findByLabelText("Assigned to"));
+    await user.click(await screen.findByRole("option", { name: "Agent User" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateTicket)).toHaveBeenCalledWith("ticket-newest", {
+        assignedToId: "agent-1"
+      });
+    });
+  });
+
+  test("ticket details can update status and category", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets/ticket-newest");
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    await user.click(await screen.findByLabelText("Status"));
+    await user.click(await screen.findByRole("option", { name: "Resolved" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateTicket)).toHaveBeenCalledWith("ticket-newest", {
+        status: TicketStatusValue.Resolved
+      });
+    });
+
+    await user.click(await screen.findByLabelText("Category"));
+    await user.click(await screen.findByRole("option", { name: "Refund request" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateTicket)).toHaveBeenCalledWith("ticket-newest", {
+        category: TicketCategoryValue.RefundRequest
+      });
+    });
+  });
+
+  test("ticket details can send a support reply", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets/ticket-newest");
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    await user.type(
+      await screen.findByLabelText("Reply"),
+      "Thanks, I reset the course enrollment state for your account."
+    );
+    await user.click(screen.getByRole("button", { name: "Send reply" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(replyToTicket)).toHaveBeenCalledWith(
+        "ticket-newest",
+        "Thanks, I reset the course enrollment state for your account."
+      );
+    });
   });
 
   test("ticket list paginates longer result sets", async () => {

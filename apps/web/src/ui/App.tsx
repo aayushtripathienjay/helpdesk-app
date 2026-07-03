@@ -30,6 +30,7 @@ import {
   Mail,
   MoreHorizontal,
   Pencil,
+  Search,
   ShieldCheck,
   Trash2,
   UserX
@@ -49,15 +50,19 @@ import { authClient } from "../api/auth";
 import {
   getTicket,
   listTickets,
+  listAssignableAgents,
+  replyToTicket,
   ticketCategories,
   ticketCategoryLabels,
   ticketStatusLabels,
   ticketStatuses,
   TicketStatusValue,
+  updateTicket,
   type Ticket,
   type TicketCategory,
   type TicketDetails,
-  type TicketStatus
+  type TicketStatus,
+  type TicketUpdatePayload
 } from "../api/tickets";
 import {
   createUser,
@@ -100,6 +105,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const queryKeys = {
+  agents: ["ticket-agents"],
   ticket: (ticketId: string) => ["ticket", ticketId],
   tickets: (filters?: { category?: string; status?: string }) => [
     "tickets",
@@ -179,6 +185,30 @@ function readTicketCategoryFilter(value: string | null): TicketCategory | "all" 
   return ticketCategories.includes(value as TicketCategory)
     ? (value as TicketCategory)
     : "all";
+}
+
+function searchTickets(tickets: Ticket[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return tickets;
+  }
+
+  return tickets.filter((ticket) => {
+    const category = ticket.category ? ticketCategoryLabels[ticket.category] : "";
+    const status = ticketStatusLabels[ticket.status];
+    const assignee = ticket.assignedTo
+      ? `${ticket.assignedTo.name} ${ticket.assignedTo.email}`
+      : "unassigned";
+
+    return [
+      ticket.subject,
+      ticket.requesterEmail,
+      status,
+      category,
+      assignee
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
 }
 
 export function App() {
@@ -519,6 +549,7 @@ function TicketsPage() {
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [ticketSearch, setTicketSearch] = useState("");
   const status = readTicketStatusFilter(searchParams.get("status"));
   const category = readTicketCategoryFilter(searchParams.get("category"));
   const filters = { category, status };
@@ -531,7 +562,11 @@ function TicketsPage() {
     queryKey: queryKeys.tickets(filters),
     queryFn: () => listTickets(filters)
   });
-  const visibleOpenTickets = tickets.filter(
+  const searchedTickets = useMemo(
+    () => searchTickets(tickets, ticketSearch),
+    [ticketSearch, tickets]
+  );
+  const visibleSearchedOpenTickets = searchedTickets.filter(
     (ticket) => ticket.status === TicketStatusValue.Open
   ).length;
 
@@ -609,10 +644,23 @@ function TicketsPage() {
               <div>
                 <CardTitle className="text-base">All tickets</CardTitle>
                 <CardDescription>
-                  Newest first. {visibleOpenTickets} open in the current view.
+                  Newest first. {visibleSearchedOpenTickets} open in the current view.
                 </CardDescription>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[32rem]">
+              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[44rem]">
+                <div>
+                  <Label htmlFor="ticket-search">Search</Label>
+                  <div className="relative mt-2">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      id="ticket-search"
+                      onChange={(event) => setTicketSearch(event.target.value)}
+                      placeholder="Subject, from, status..."
+                      value={ticketSearch}
+                    />
+                  </div>
+                </div>
                 <div>
                   <Label htmlFor="ticket-status-filter">Status</Label>
                   <Select
@@ -659,10 +707,10 @@ function TicketsPage() {
             <TicketListSkeleton />
           ) : error ? (
             <StateMessage message={getErrorMessage(error, "Something went wrong")} />
-          ) : tickets.length === 0 ? (
+          ) : searchedTickets.length === 0 ? (
             <StateMessage message="No tickets found." />
           ) : (
-            <TicketList tickets={tickets} />
+            <TicketList tickets={searchedTickets} />
           )}
           {isFetching && !isLoading ? (
             <p className="border-t px-4 py-2 text-xs text-muted-foreground">
@@ -676,6 +724,7 @@ function TicketsPage() {
 }
 
 function TicketDetailsPage() {
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
   const { ticketId } = useParams();
@@ -687,6 +736,29 @@ function TicketDetailsPage() {
     enabled: Boolean(ticketId),
     queryKey: queryKeys.ticket(ticketId ?? ""),
     queryFn: () => getTicket(ticketId ?? "")
+  });
+  const {
+    data: agents = [],
+    error: agentsError,
+    isLoading: isAgentsLoading
+  } = useQuery({
+    queryKey: queryKeys.agents,
+    queryFn: listAssignableAgents
+  });
+  const assignTicketMutation = useMutation({
+    mutationFn: (payload: TicketUpdatePayload) =>
+      updateTicket(ticketId ?? "", payload),
+    onSuccess: async (updatedTicket) => {
+      queryClient.setQueryData(queryKeys.ticket(updatedTicket.id), updatedTicket);
+      await queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    }
+  });
+  const replyMutation = useMutation({
+    mutationFn: (body: string) => replyToTicket(ticketId ?? "", body),
+    onSuccess: async (updatedTicket) => {
+      queryClient.setQueryData(queryKeys.ticket(updatedTicket.id), updatedTicket);
+      await queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    }
   });
 
   return (
@@ -718,14 +790,73 @@ function TicketDetailsPage() {
             <StateMessage message={getErrorMessage(error, "Ticket not found")} />
           </Card>
         ) : (
-          <TicketDetailsContent ticket={ticket} />
+          <TicketDetailsContent
+            agents={agents}
+            assignmentError={getErrorMessage(
+              assignTicketMutation.error ?? agentsError,
+              "Unable to update assignment"
+            )}
+            isAgentsLoading={isAgentsLoading}
+            isSavingTicket={assignTicketMutation.isPending}
+            isSendingReply={replyMutation.isPending}
+            onReply={(body) => replyMutation.mutateAsync(body)}
+            onUpdateTicket={(payload) => assignTicketMutation.mutate(payload)}
+            showAssignmentError={Boolean(assignTicketMutation.error ?? agentsError)}
+            showReplyError={Boolean(replyMutation.error)}
+            ticket={ticket}
+            ticketUpdateError={getErrorMessage(
+              assignTicketMutation.error ?? agentsError,
+              "Unable to update ticket"
+            )}
+            replyError={getErrorMessage(replyMutation.error, "Unable to send reply")}
+          />
         )}
       </div>
     </main>
   );
 }
 
-function TicketDetailsContent({ ticket }: { ticket: TicketDetails }) {
+function TicketDetailsContent({
+  agents,
+  assignmentError,
+  isAgentsLoading,
+  isSavingTicket,
+  isSendingReply,
+  onReply,
+  onUpdateTicket,
+  showAssignmentError,
+  showReplyError,
+  ticket,
+  ticketUpdateError,
+  replyError
+}: {
+  agents: Array<{ id: string; name: string; email: string }>;
+  assignmentError: string;
+  isAgentsLoading: boolean;
+  isSavingTicket: boolean;
+  isSendingReply: boolean;
+  onReply: (body: string) => Promise<unknown>;
+  onUpdateTicket: (payload: TicketUpdatePayload) => void;
+  showAssignmentError: boolean;
+  showReplyError: boolean;
+  ticket: TicketDetails;
+  ticketUpdateError: string;
+  replyError: string;
+}) {
+  const [replyBody, setReplyBody] = useState("");
+
+  async function handleReplySubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextReply = replyBody.trim();
+
+    if (!nextReply) {
+      return;
+    }
+
+    await onReply(nextReply);
+    setReplyBody("");
+  }
+
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <Card className="overflow-hidden border-slate-200 shadow-sm">
@@ -754,6 +885,12 @@ function TicketDetailsContent({ ticket }: { ticket: TicketDetails }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4 bg-white p-4">
+          <div>
+            <h2 className="text-base font-semibold">Reply thread</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Customer messages and support replies for this ticket.
+            </p>
+          </div>
           {ticket.messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">No messages yet.</p>
           ) : (
@@ -783,6 +920,25 @@ function TicketDetailsContent({ ticket }: { ticket: TicketDetails }) {
               </article>
             ))
           )}
+          <form className="rounded-md border border-slate-200 bg-white p-4" onSubmit={handleReplySubmit}>
+            <Label htmlFor="ticket-reply">Reply</Label>
+            <textarea
+              className="mt-2 min-h-32 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isSendingReply}
+              id="ticket-reply"
+              onChange={(event) => setReplyBody(event.target.value)}
+              placeholder="Write a support reply..."
+              value={replyBody}
+            />
+            {showReplyError ? (
+              <p className="mt-2 text-xs text-destructive">{replyError}</p>
+            ) : null}
+            <div className="mt-3 flex justify-end">
+              <Button disabled={isSendingReply || replyBody.trim().length === 0} type="submit">
+                {isSendingReply ? "Sending..." : "Send reply"}
+              </Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
 
@@ -791,7 +947,89 @@ function TicketDetailsContent({ ticket }: { ticket: TicketDetails }) {
           <CardTitle className="text-base">Properties</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 bg-white p-4 text-sm">
-          <TicketProperty label="Requester" value={ticket.requesterEmail} />
+          <div className="space-y-2">
+            <Label htmlFor="ticket-assignee">Assigned to</Label>
+            <Select
+              disabled={isAgentsLoading || isSavingTicket}
+              onValueChange={(value) =>
+                onUpdateTicket({
+                  assignedToId: value === "unassigned" ? null : value
+                })
+              }
+              value={ticket.assignedToId ?? "unassigned"}
+            >
+              <SelectTrigger id="ticket-assignee">
+                <SelectValue placeholder="Assign ticket" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {ticket.assignedTo ? (
+              <p className="text-xs text-muted-foreground">
+                {ticket.assignedTo.email}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ticket-status">Status</Label>
+            <Select
+              disabled={isSavingTicket}
+              onValueChange={(value) =>
+                onUpdateTicket({ status: value as TicketStatus })
+              }
+              value={ticket.status}
+            >
+              <SelectTrigger id="ticket-status">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                {ticketStatuses.map((ticketStatus) => (
+                  <SelectItem key={ticketStatus} value={ticketStatus}>
+                    {ticketStatusLabels[ticketStatus]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ticket-category">Category</Label>
+            <Select
+              disabled={isSavingTicket}
+              onValueChange={(value) =>
+                onUpdateTicket({
+                  category: value === "uncategorized" ? null : (value as TicketCategory)
+                })
+              }
+              value={ticket.category ?? "uncategorized"}
+            >
+              <SelectTrigger id="ticket-category">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="uncategorized">Uncategorized</SelectItem>
+                {ticketCategories.map((ticketCategory) => (
+                  <SelectItem key={ticketCategory} value={ticketCategory}>
+                    {ticketCategoryLabels[ticketCategory]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {isSavingTicket ? (
+            <p className="text-xs text-muted-foreground">Saving ticket...</p>
+          ) : null}
+          {showAssignmentError ? (
+            <p className="text-xs text-destructive">
+              {ticketUpdateError || assignmentError}
+            </p>
+          ) : null}
+          <TicketProperty label="From" value={ticket.requesterEmail} />
           <TicketProperty label="Created" value={new Date(ticket.createdAt).toLocaleString()} />
           <TicketProperty label="Updated" value={new Date(ticket.updatedAt).toLocaleString()} />
           <TicketProperty label="Ticket ID" value={ticket.id} />
@@ -1251,7 +1489,7 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
       },
       {
         accessorKey: "requesterEmail",
-        header: "Requester"
+        header: "From"
       },
       {
         accessorKey: "status",

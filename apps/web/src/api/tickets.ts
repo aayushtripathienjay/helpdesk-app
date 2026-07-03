@@ -38,8 +38,18 @@ export type Ticket = {
   requesterEmail: string;
   status: TicketStatus;
   category: TicketCategory | null;
+  assignedToId: string | null;
+  assignedTo: AssignableAgent | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AssignableAgent = {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "agent";
+  isActive: boolean;
 };
 
 export type TicketMessage = {
@@ -89,5 +99,61 @@ export async function getTicket(ticketId: string): Promise<TicketDetails> {
     return response.data.data;
   } catch {
     throw new Error("Failed to load ticket");
+  }
+}
+
+export async function listAssignableAgents(): Promise<AssignableAgent[]> {
+  try {
+    const response = await axios.get<{ data: AssignableAgent[] }>(
+      "/api/tickets/agents"
+    );
+    return response.data.data;
+  } catch {
+    throw new Error("Failed to load agents");
+  }
+}
+
+export async function assignTicket(ticketId: string, assignedToId: string | null) {
+  try {
+    const response = await axios.patch<{ data: TicketDetails }>(
+      `/api/tickets/${ticketId}`,
+      { assignedToId }
+    );
+    return response.data.data;
+  } catch {
+    throw new Error("Failed to assign ticket");
+  }
+}
+
+export type TicketUpdatePayload = {
+  assignedToId?: string | null;
+  status?: TicketStatus;
+  category?: TicketCategory | null;
+};
+
+export async function updateTicket(
+  ticketId: string,
+  payload: TicketUpdatePayload
+) {
+  try {
+    const response = await axios.patch<{ data: TicketDetails }>(
+      `/api/tickets/${ticketId}`,
+      payload
+    );
+    return response.data.data;
+  } catch {
+    throw new Error("Failed to update ticket");
+  }
+}
+
+export async function replyToTicket(ticketId: string, body: string) {
+  try {
+    const response = await axios.post<{ data: TicketDetails }>(
+      `/api/tickets/${ticketId}/messages`,
+      { body }
+    );
+    return response.data.data;
+  } catch {
+    throw new Error("Failed to send reply");
   }
 }

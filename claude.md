@@ -11,8 +11,8 @@ The product should help support agents receive, classify, summarize, respond to,
 Core features:
 
 - Receive support emails and create tickets
-- Ticket list with filtering and sorting
-- Ticket detail view
+- Ticket list with filtering, searching, sorting, and pagination
+- Ticket detail view with editable properties and reply thread
 - AI-powered ticket classification
 - AI summaries
 - AI-suggested replies
@@ -37,6 +37,51 @@ Users and roles:
 - The app is deployed with an initial admin user
 - Admins can create additional agent users
 - Agents manage tickets
+
+## Ticket Module Memory
+
+Implemented ticket features:
+
+- Dashboard scorecards link to the ticket queue using React Router `Link`, so navigation is smooth and does not reload the whole page.
+- Ticket queue supports server-backed status/category filtering and client-side search.
+- Ticket search matches subject, From email, status label, category label, assignee name, and assignee email.
+- Ticket queue uses TanStack Table for sorting and pagination.
+- Ticket queue defaults to 10 rows per page and supports 10, 25, and 50 row page sizes.
+- Ticket and user tables use an internal scroll region with sticky headers so larger page sizes do not push the whole page down.
+- Ticket queue column label for the requester email is `From`, not `Requester`.
+- Ticket subjects are clickable and route to `/tickets/:ticketId`.
+- Ticket details show subject, From email, status, category, assignee, timestamps, ticket ID, and full message thread.
+- Ticket details include editable `Assigned to`, `Status`, and `Category` selectors.
+- Ticket details include a reply thread and a reply form below the messages.
+- Support replies are persisted as `TicketMessage` rows with `direction = outbound`.
+- Customer inbound messages are persisted as `TicketMessage` rows with `direction = inbound`.
+- Ticket assignment is persisted with nullable `Ticket.assignedToId`, related to `User`.
+- Ticket assignment can be cleared by selecting `Unassigned`.
+- Status values are `open`, `resolved`, and `closed`.
+- Category values are `general_question`, `technical_question`, and `refund_request`; category can also be cleared to uncategorized.
+- Sample ticket seed creates exactly 100 deterministic realistic sample tickets, in addition to any existing tickets.
+
+Ticket frontend files:
+
+- `apps/web/src/api/tickets.ts` - ticket list/detail/update/reply API helpers and shared ticket types.
+- `apps/web/src/ui/App.tsx` - ticket queue, ticket detail page, search, table pagination, property updates, and reply UI.
+- `apps/web/src/ui/App.tickets.test.tsx` - component coverage for list, filters, search, sorting, pagination, details, assignment, status/category updates, and replies.
+
+Ticket API files:
+
+- `apps/api/src/routes/tickets.ts` - ticket list/detail routes, assignable agents route, ticket update route, inbound email route, and reply route.
+- `apps/api/src/scripts/sample-tickets.ts` - deterministic realistic sample ticket seed.
+- `apps/api/prisma/schema.prisma` - `Ticket`, `TicketMessage`, and ticket assignee relation.
+- `apps/api/prisma/migrations/20260704000000_add_ticket_assignee/migration.sql` - ticket assignee migration.
+
+Ticket API behavior:
+
+- `GET /api/tickets` returns tickets ordered newest first and supports `status` and `category` query filters.
+- `GET /api/tickets/agents` returns active admins/agents that can be assigned tickets.
+- `GET /api/tickets/:ticketId` returns ticket details including ordered messages.
+- `PATCH /api/tickets/:ticketId` updates `assignedToId`, `status`, and/or `category`.
+- `POST /api/tickets/:ticketId/messages` creates an outbound support reply and returns the updated ticket details.
+- `POST /api/inbound-email` creates inbound customer tickets/messages.
 
 ## Tech Stack
 
@@ -136,6 +181,7 @@ If it is missing, Better Auth rejects browser sign-in with `Invalid origin`.
 
 - Use `axios` for frontend HTTP requests from `apps/web/src/api/*`.
 - Use TanStack Query (`useQuery`, `useMutation`, and query invalidation) for server state in React components.
+- Ticket list/detail data uses TanStack Query cache keys in `apps/web/src/ui/App.tsx`; invalidate the `["tickets"]` query family after ticket updates/replies.
 - Do not add component-level `useEffect` fetch flows for API data when the data can be represented as a query.
 - After create, update, or delete actions, invalidate the related query key instead of manually re-fetching and storing duplicate local state.
 - Keep Better Auth session handling on the Better Auth client hooks unless the auth flow itself needs a dedicated API helper.
