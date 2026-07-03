@@ -18,10 +18,20 @@ import {
   UserX
 } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { Navigate, Route, Routes, useNavigate } from "react-router";
+import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router";
 import { z } from "zod";
 import { authClient } from "../api/auth";
-import { listTickets } from "../api/tickets";
+import {
+  listTickets,
+  ticketCategories,
+  ticketCategoryLabels,
+  ticketStatusLabels,
+  ticketStatuses,
+  TicketStatusValue,
+  type Ticket,
+  type TicketCategory,
+  type TicketStatus
+} from "../api/tickets";
 import {
   createUser,
   deactivateUser,
@@ -62,20 +72,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const categoryLabels = {
-  general_question: "General question",
-  technical_question: "Technical question",
-  refund_request: "Refund request"
-};
-
-const statusLabels = {
-  open: "Open",
-  resolved: "Resolved",
-  closed: "Closed"
-};
-
 const queryKeys = {
-  tickets: ["tickets"],
+  tickets: (filters?: { category?: string; status?: string }) => [
+    "tickets",
+    filters ?? {}
+  ],
   users: ["users"]
 } as const;
 
@@ -138,6 +139,18 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function readTicketStatusFilter(value: string | null): TicketStatus | "all" {
+  return ticketStatuses.includes(value as TicketStatus)
+    ? (value as TicketStatus)
+    : "all";
+}
+
+function readTicketCategoryFilter(value: string | null): TicketCategory | "all" {
+  return ticketCategories.includes(value as TicketCategory)
+    ? (value as TicketCategory)
+    : "all";
+}
+
 export function App() {
   return (
     <Routes>
@@ -147,6 +160,14 @@ export function App() {
         element={
           <RequireAuth>
             <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/tickets"
+        element={
+          <RequireAuth>
+            <TicketsPage />
           </RequireAuth>
         }
       />
@@ -397,15 +418,21 @@ function DashboardPage() {
   const user = getSessionUser(session);
   const {
     data: tickets = [],
-    error,
     isLoading
   } = useQuery({
-    queryKey: queryKeys.tickets,
-    queryFn: listTickets
+    queryKey: queryKeys.tickets(),
+    queryFn: () => listTickets()
   });
 
   const openTickets = useMemo(
-    () => tickets.filter((ticket) => ticket.status === "open").length,
+    () =>
+      tickets.filter((ticket) => ticket.status === TicketStatusValue.Open).length,
+    [tickets]
+  );
+  const resolvedTickets = useMemo(
+    () =>
+      tickets.filter((ticket) => ticket.status === TicketStatusValue.Resolved)
+        .length,
     [tickets]
   );
 
@@ -423,87 +450,188 @@ function DashboardPage() {
               Ticket Dashboard
             </h1>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm sm:min-w-72">
-            <Metric label="Open" value={openTickets} />
-            <Metric label="Total" value={tickets.length} />
-          </div>
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          <Card>
-            <CardHeader className="p-4 pb-0">
-              <CardTitle className="text-base">Filters</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4">
-              <div>
-                <Label htmlFor="status-filter">Status</Label>
-                <Select defaultValue="all">
-                  <SelectTrigger className="mt-2" id="status-filter">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="category-filter">Category</Label>
-                <Select defaultValue="all">
-                  <SelectTrigger className="mt-2" id="category-filter">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All categories</SelectItem>
-                    <SelectItem value="general_question">General question</SelectItem>
-                    <SelectItem value="technical_question">
-                      Technical question
-                    </SelectItem>
-                    <SelectItem value="refund_request">Refund request</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <CardHeader className="border-b px-4 py-3">
-              <CardTitle className="text-base">Tickets</CardTitle>
-            </CardHeader>
-
-            {isLoading ? (
-              <TicketListSkeleton />
-            ) : error ? (
-              <StateMessage message={getErrorMessage(error, "Something went wrong")} />
-            ) : (
-              <div className="divide-y">
-                {tickets.map((ticket) => (
-                  <article
-                    className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                    key={ticket.id}
-                  >
-                    <div>
-                      <h3 className="font-medium">{ticket.subject}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {ticket.requesterEmail}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 sm:justify-end">
-                      <Badge variant="secondary">
-                        {statusLabels[ticket.status]}
-                      </Badge>
-                      <Badge variant="outline">
-                        {categoryLabels[ticket.category]}
-                      </Badge>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </Card>
+        <section className="grid gap-4 md:grid-cols-3">
+          <Metric
+            href="/tickets"
+            label="Total tickets"
+            loading={isLoading}
+            value={tickets.length}
+          />
+          <Metric
+            href={`/tickets?status=${TicketStatusValue.Open}`}
+            label="Open"
+            loading={isLoading}
+            value={openTickets}
+          />
+          <Metric
+            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            label="Resolved"
+            loading={isLoading}
+            value={resolvedTickets}
+          />
         </section>
+      </div>
+    </main>
+  );
+}
+
+function TicketsPage() {
+  const { data: session } = authClient.useSession();
+  const user = getSessionUser(session);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status = readTicketStatusFilter(searchParams.get("status"));
+  const category = readTicketCategoryFilter(searchParams.get("category"));
+  const filters = { category, status };
+  const {
+    data: tickets = [],
+    error,
+    isFetching,
+    isLoading
+  } = useQuery({
+    queryKey: queryKeys.tickets(filters),
+    queryFn: () => listTickets(filters)
+  });
+  const visibleOpenTickets = tickets.filter(
+    (ticket) => ticket.status === TicketStatusValue.Open
+  ).length;
+
+  function updateFilter(key: "category" | "status", value: string) {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (value === "all") {
+      nextParams.delete(key);
+    } else {
+      nextParams.set(key, value);
+    }
+
+    setSearchParams(nextParams);
+  }
+
+  function scoreHref(nextStatus: TicketStatus | "all") {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (nextStatus === "all") {
+      nextParams.delete("status");
+    } else {
+      nextParams.set("status", nextStatus);
+    }
+
+    const query = nextParams.toString();
+    return query ? `/tickets?${query}` : "/tickets";
+  }
+
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <Nav isAdmin={isAdminSession(session)} userName={user?.name ?? "User"} />
+
+        <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+              Tickets
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+              Ticket Queue
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Review customer requests from newest to oldest and narrow the queue
+              by status or category.
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <a href="/">Dashboard</a>
+          </Button>
+        </header>
+
+        <section className="grid gap-4 md:grid-cols-4">
+          <Metric
+            active={status === "all"}
+            href={scoreHref("all")}
+            label="Visible tickets"
+            loading={isLoading}
+            value={tickets.length}
+          />
+          {ticketStatuses.map((ticketStatus) => (
+            <Metric
+              active={status === ticketStatus}
+              href={scoreHref(ticketStatus)}
+              key={ticketStatus}
+              label={ticketStatusLabels[ticketStatus]}
+              loading={isLoading}
+              value={tickets.filter((ticket) => ticket.status === ticketStatus).length}
+            />
+          ))}
+        </section>
+
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+          <CardHeader className="border-b bg-white px-4 py-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle className="text-base">All tickets</CardTitle>
+                <CardDescription>
+                  Newest first. {visibleOpenTickets} open in the current view.
+                </CardDescription>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[32rem]">
+                <div>
+                  <Label htmlFor="ticket-status-filter">Status</Label>
+                  <Select
+                    onValueChange={(value) => updateFilter("status", value)}
+                    value={status}
+                  >
+                    <SelectTrigger className="mt-2" id="ticket-status-filter">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {ticketStatuses.map((ticketStatus) => (
+                        <SelectItem key={ticketStatus} value={ticketStatus}>
+                          {ticketStatusLabels[ticketStatus]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="ticket-category-filter">Category</Label>
+                  <Select
+                    onValueChange={(value) => updateFilter("category", value)}
+                    value={category}
+                  >
+                    <SelectTrigger className="mt-2" id="ticket-category-filter">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {ticketCategories.map((ticketCategory) => (
+                        <SelectItem key={ticketCategory} value={ticketCategory}>
+                          {ticketCategoryLabels[ticketCategory]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+
+          {isLoading ? (
+            <TicketListSkeleton />
+          ) : error ? (
+            <StateMessage message={getErrorMessage(error, "Something went wrong")} />
+          ) : tickets.length === 0 ? (
+            <StateMessage message="No tickets found." />
+          ) : (
+            <TicketList tickets={tickets} />
+          )}
+          {isFetching && !isLoading ? (
+            <p className="border-t px-4 py-2 text-xs text-muted-foreground">
+              Refreshing tickets...
+            </p>
+          ) : null}
+        </Card>
       </div>
     </main>
   );
@@ -1000,6 +1128,45 @@ function UsersPage() {
   );
 }
 
+function TicketList({ tickets }: { tickets: Ticket[] }) {
+  return (
+    <div className="divide-y bg-white">
+      {tickets.map((ticket) => (
+        <article
+          className="grid gap-4 px-4 py-4 transition-colors hover:bg-slate-50 lg:grid-cols-[1fr_auto] lg:items-center"
+          key={ticket.id}
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-medium text-slate-950">{ticket.subject}</h2>
+              <Badge
+                variant={
+                  ticket.status === TicketStatusValue.Open ? "outline" : "secondary"
+                }
+              >
+                {ticketStatusLabels[ticket.status]}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {ticket.requesterEmail}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Created {new Date(ticket.createdAt).toLocaleString()}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Badge variant="secondary">
+              {ticket.category
+                ? ticketCategoryLabels[ticket.category]
+                : "Uncategorized"}
+            </Badge>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   const navigate = useNavigate();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -1032,6 +1199,13 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
         </span>
       </a>
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <Button
+          asChild
+          className="h-8 border-white/15 bg-white/10 px-3 text-sm text-white shadow-sm hover:bg-white/15 hover:text-white"
+          variant="outline"
+        >
+          <a href="/tickets">Tickets</a>
+        </Button>
         {isAdmin ? (
           <Button
             asChild
@@ -1058,16 +1232,36 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  active = false,
+  href,
+  label,
+  loading = false,
+  value
+}: {
+  active?: boolean;
+  href: string;
+  label: string;
+  loading?: boolean;
+  value: number;
+}) {
   return (
-    <Card>
-      <CardContent className="px-4 py-3">
+    <a
+      className={cn(
+        "block rounded-lg border bg-white text-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-teal-700/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2",
+        active && "border-teal-700 bg-teal-50"
+      )}
+      href={href}
+    >
+      <CardContent className="px-4 py-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="mt-1 text-2xl font-semibold">{value}</p>
+        <p className="mt-2 text-3xl font-semibold">
+          {loading ? "..." : value}
+        </p>
       </CardContent>
-    </Card>
+    </a>
   );
 }
 

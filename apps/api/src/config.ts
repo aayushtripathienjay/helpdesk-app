@@ -21,8 +21,12 @@ const configuredWebOrigins = [
 const isProduction = process.env.NODE_ENV === "production";
 
 export const config = {
+  inboundEmailToken:
+    process.env.INBOUND_EMAIL_TOKEN ??
+    (isProduction ? undefined : "dev-inbound-email-token"),
   isProduction,
   port: Number(process.env.API_PORT ?? 3000),
+  supportEmail: process.env.SUPPORT_EMAIL ?? "support@example.com",
   webOrigins: Array.from(
     new Set([
       ...configuredWebOrigins,

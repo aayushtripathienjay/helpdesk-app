@@ -2,6 +2,7 @@ import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
 import { UserRole } from "@prisma/client";
 import { prisma } from "../db/prisma";
+import { seedSampleTickets } from "./sample-tickets";
 
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
@@ -72,7 +73,7 @@ if (existingCredentialAccount) {
     }
   });
 } else {
-  await prisma.account.create({
+await prisma.account.create({
     data: {
       userId: user.id,
       accountId: user.id,
@@ -82,6 +83,8 @@ if (existingCredentialAccount) {
   });
 }
 
+await seedSampleTickets();
 await prisma.$disconnect();
 
 console.log(`Seeded admin user: ${adminEmail}`);
+console.log("Seeded sample tickets.");

@@ -1,6 +1,7 @@
 import { hashPassword } from "better-auth/crypto";
 import { UserRole, type User } from "@prisma/client";
 import { prisma } from "../db/prisma";
+import { seedSampleTickets } from "./sample-tickets";
 
 type SeedUserInput = {
   email: string;
@@ -83,6 +84,7 @@ await seedUser({
   role: UserRole.agent
 });
 
+await seedSampleTickets();
 await prisma.$disconnect();
 
-console.log("Seeded e2e admin and agent users.");
+console.log("Seeded e2e admin, agent, and sample tickets.");

@@ -5,7 +5,7 @@ import { auth } from "./auth";
 import { config } from "./config";
 import { requireAuth } from "./middleware/auth";
 import { healthRouter } from "./routes/health";
-import { ticketsRouter } from "./routes/tickets";
+import { inboundEmailRouter, ticketsRouter } from "./routes/tickets";
 import { userRoutes } from "./routes/users";
 
 export const app = express();
@@ -28,6 +28,7 @@ app.get("/", (_request, response) => {
     endpoints: {
       health: "/api/health",
       tickets: "/api/tickets",
+      inboundEmail: "/api/inbound-email",
       users: "/api/users",
       me: "/api/me"
     }
@@ -37,6 +38,7 @@ app.get("/", (_request, response) => {
 app.use("/health", healthRouter);
 app.use("/tickets", requireAuth, ticketsRouter);
 app.use("/api/health", healthRouter);
+app.use("/api/inbound-email", inboundEmailRouter);
 app.use("/api/tickets", requireAuth, ticketsRouter);
 app.use(userRoutes);
 
