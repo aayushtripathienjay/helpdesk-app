@@ -1,4 +1,11 @@
-import "dotenv/config";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
+
+const configDir = dirname(fileURLToPath(import.meta.url));
+
+loadEnv({ path: resolve(configDir, "../../../.env") });
+loadEnv({ path: resolve(configDir, "../.env"), override: true });
 
 const localWebOrigins = [
   "http://localhost:5173",
@@ -21,6 +28,8 @@ const configuredWebOrigins = [
 const isProduction = process.env.NODE_ENV === "production";
 
 export const config = {
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   inboundEmailToken:
     process.env.INBOUND_EMAIL_TOKEN ??
     (isProduction ? undefined : "dev-inbound-email-token"),

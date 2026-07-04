@@ -6,7 +6,9 @@ import {
   getTicket,
   listAssignableAgents,
   listTickets,
+  polishTicketReply,
   replyToTicket,
+  summarizeTicketConversation,
   TicketCategoryValue,
   TicketStatusValue,
   type Ticket,
@@ -20,7 +22,9 @@ const mocks = vi.hoisted(() => ({
   getTicket: vi.fn(),
   listAssignableAgents: vi.fn(),
   listTickets: vi.fn(),
+  polishTicketReply: vi.fn(),
   replyToTicket: vi.fn(),
+  summarizeTicketConversation: vi.fn(),
   signOut: vi.fn(),
   updateTicket: vi.fn()
 }));
@@ -59,7 +63,9 @@ vi.mock("../api/tickets", () => {
     getTicket: mocks.getTicket,
     listAssignableAgents: mocks.listAssignableAgents,
     listTickets: mocks.listTickets,
+    polishTicketReply: mocks.polishTicketReply,
     replyToTicket: mocks.replyToTicket,
+    summarizeTicketConversation: mocks.summarizeTicketConversation,
     TicketCategoryValue,
     ticketCategories: Object.values(TicketCategoryValue),
     ticketCategoryLabels: {
@@ -206,6 +212,14 @@ describe("Tickets UI", () => {
         }
       ]
     });
+    vi.mocked(polishTicketReply).mockReset();
+    vi.mocked(polishTicketReply).mockResolvedValue(
+      "Thanks for reaching out. I reset the course enrollment state for your account, so please try opening the dashboard again."
+    );
+    vi.mocked(summarizeTicketConversation).mockReset();
+    vi.mocked(summarizeTicketConversation).mockResolvedValue(
+      "The student cannot access the course dashboard after resetting their password. No support action has been logged yet."
+    );
     vi.mocked(getTicket).mockReset();
     vi.mocked(getTicket).mockResolvedValue(ticketDetails);
     vi.mocked(listAssignableAgents).mockReset();
@@ -353,6 +367,43 @@ describe("Tickets UI", () => {
         "Thanks, I reset the course enrollment state for your account."
       );
     });
+  });
+
+  test("ticket details can polish a support reply before sending", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets/ticket-newest");
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    const replyInput = await screen.findByLabelText("Reply");
+    await user.type(replyInput, "fixed it try again");
+    await user.click(screen.getByRole("button", { name: "Polish" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(polishTicketReply)).toHaveBeenCalledWith(
+        "ticket-newest",
+        "fixed it try again"
+      );
+    });
+    expect(replyInput).toHaveValue(
+      "Thanks for reaching out. I reset the course enrollment state for your account, so please try opening the dashboard again."
+    );
+  });
+
+  test("ticket details can summarize the conversation", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/tickets/ticket-newest");
+
+    expect(await screen.findByRole("heading", { name: "Ticket Details" })).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Summarize" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(summarizeTicketConversation)).toHaveBeenCalledWith(
+        "ticket-newest"
+      );
+    });
+    expect(await screen.findByLabelText("Ticket summary")).toHaveTextContent(
+      "The student cannot access the course dashboard after resetting their password."
+    );
   });
 
   test("ticket list paginates longer result sets", async () => {

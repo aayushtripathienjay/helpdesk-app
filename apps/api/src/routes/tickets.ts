@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { google } from "@ai-sdk/google";
+import { generateText } from "ai";
 import { fromNodeHeaders } from "better-auth/node";
 import { Prisma, TicketCategory, TicketStatus, UserRole } from "@prisma/client";
 import { auth } from "../auth";
@@ -52,6 +54,22 @@ const ticketDetailsSelect = {
   }
 } satisfies Prisma.TicketSelect;
 
+const ticketAiSelect = {
+  subject: true,
+  requesterEmail: true,
+  messages: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      direction: true,
+      senderEmail: true,
+      body: true,
+      createdAt: true
+    }
+  }
+} satisfies Prisma.TicketSelect;
+
+type TicketAiContext = Prisma.TicketGetPayload<{ select: typeof ticketAiSelect }>;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -96,6 +114,104 @@ function readTicketCategory(value: unknown) {
     Object.values(TicketCategory).includes(value as TicketCategory)
     ? (value as TicketCategory)
     : undefined;
+}
+
+function formatTicketConversation(ticket: TicketAiContext) {
+  return ticket.messages
+    .map((message) => {
+      const role = message.direction === "inbound" ? "Customer" : "Support";
+      return `${role} (${message.senderEmail}, ${message.createdAt.toISOString()}):\n${message.body}`;
+    })
+    .join("\n\n");
+}
+
+function parseClassificationResponse(value: string) {
+  const jsonMatch = value.match(/\{[\s\S]*\}/);
+  const jsonText = jsonMatch?.[0] ?? value;
+  const parsed = JSON.parse(jsonText) as {
+    category?: unknown;
+    confidence?: unknown;
+  };
+  const category = readTicketCategory(parsed.category);
+
+  if (!category) {
+    return null;
+  }
+
+  const confidence =
+    typeof parsed.confidence === "number" &&
+    Number.isFinite(parsed.confidence) &&
+    parsed.confidence >= 0 &&
+    parsed.confidence <= 1
+      ? parsed.confidence
+      : null;
+
+  return {
+    category,
+    confidence
+  };
+}
+
+async function classifyTicketInBackground(ticketId: string) {
+  if (!config.googleGenerativeAiApiKey) {
+    return;
+  }
+
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: ticketAiSelect
+    });
+
+    if (!ticket || ticket.messages.length === 0) {
+      return;
+    }
+
+    const { text } = await generateText({
+      model: google(config.geminiModel),
+      system:
+        "You classify student support tickets. Use exactly one category from this enum: general_question, technical_question, refund_request. Return only compact JSON with category and confidence from 0 to 1.",
+      prompt: [
+        "Category definitions:",
+        "- general_question: course content, certificates, account questions, scheduling, or general support questions.",
+        "- technical_question: login failures, access problems, bugs, errors, broken pages, downloads, video playback, app issues, or other technical troubleshooting.",
+        "- refund_request: refunds, billing reversals, duplicate charges, cancellations, invoices, receipts, payment disputes, or purchase issues.",
+        `Ticket subject: ${ticket.subject}`,
+        `Customer email: ${ticket.requesterEmail}`,
+        "Conversation:",
+        formatTicketConversation(ticket),
+        'Return JSON like {"category":"technical_question","confidence":0.82}.'
+      ].join("\n\n"),
+      temperature: 0
+    });
+
+    const classification = parseClassificationResponse(text.trim());
+
+    if (!classification) {
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.aiSuggestion.create({
+        data: {
+          ticketId,
+          category: classification.category,
+          confidence: classification.confidence
+        }
+      }),
+      prisma.ticket.updateMany({
+        where: {
+          id: ticketId,
+          category: null
+        },
+        data: {
+          category: classification.category
+        }
+      })
+    ]);
+  } catch (error) {
+    console.error("Failed to classify ticket", { error, ticketId });
+  }
 }
 
 ticketsRouter.get("/", async (request, response) => {
@@ -279,6 +395,124 @@ ticketsRouter.post("/:ticketId/messages", async (request, response) => {
   }
 });
 
+ticketsRouter.post("/:ticketId/polish-reply", async (request, response) => {
+  if (!isObject(request.body)) {
+    response.status(400).json({ error: "Request body is required" });
+    return;
+  }
+
+  const body = readString(request.body, "body");
+
+  if (!body) {
+    response.status(400).json({ error: "Reply body is required" });
+    return;
+  }
+
+  if (!config.googleGenerativeAiApiKey) {
+    response.status(503).json({
+      error: "Gemini API key is not configured"
+    });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: request.params.ticketId },
+    select: ticketAiSelect
+  });
+
+  if (!ticket) {
+    response.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+
+  const conversation = formatTicketConversation(ticket);
+
+  let polishedReply = "";
+
+  try {
+    const { text } = await generateText({
+      model: google(config.geminiModel),
+      system:
+        "You polish support agent replies for a student helpdesk. Improve clarity, tone, empathy, and grammar while preserving the agent's meaning and any concrete commitments. Do not invent policy, refunds, timelines, links, or troubleshooting steps. Return only the rewritten reply text with no markdown.",
+      prompt: [
+        `Ticket subject: ${ticket.subject}`,
+        `Customer email: ${ticket.requesterEmail}`,
+        "Conversation:",
+        conversation || "No prior messages.",
+        "Agent draft reply:",
+        body
+      ].join("\n\n"),
+      temperature: 0.3
+    });
+
+    polishedReply = text.trim();
+  } catch {
+    response.status(502).json({ error: "Failed to polish reply with Gemini" });
+    return;
+  }
+
+  if (!polishedReply) {
+    response.status(502).json({ error: "Gemini returned an empty reply" });
+    return;
+  }
+
+  response.json({ data: { body: polishedReply } });
+});
+
+ticketsRouter.post("/:ticketId/summary", async (request, response) => {
+  if (!config.googleGenerativeAiApiKey) {
+    response.status(503).json({
+      error: "Gemini API key is not configured"
+    });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: request.params.ticketId },
+    select: ticketAiSelect
+  });
+
+  if (!ticket) {
+    response.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+
+  if (ticket.messages.length === 0) {
+    response.status(400).json({ error: "Ticket has no messages to summarize" });
+    return;
+  }
+
+  let summary = "";
+
+  try {
+    const { text } = await generateText({
+      model: google(config.geminiModel),
+      system:
+        "You summarize student support ticket conversations for helpdesk agents. Be concise, factual, and action-oriented. Do not invent information. Return plain text only.",
+      prompt: [
+        `Ticket subject: ${ticket.subject}`,
+        `Customer email: ${ticket.requesterEmail}`,
+        "Conversation:",
+        formatTicketConversation(ticket),
+        "Write a compact summary with: issue, relevant context, what support has already done, and suggested next step if clear."
+      ].join("\n\n"),
+      temperature: 0.2
+    });
+
+    summary = text.trim();
+  } catch {
+    response.status(502).json({ error: "Failed to summarize ticket with Gemini" });
+    return;
+  }
+
+  if (!summary) {
+    response.status(502).json({ error: "Gemini returned an empty summary" });
+    return;
+  }
+
+  response.json({ data: { summary } });
+});
+
 inboundEmailRouter.post("/", async (request, response) => {
   const inboundToken = request.header("x-inbound-email-token");
 
@@ -332,7 +566,6 @@ inboundEmailRouter.post("/", async (request, response) => {
     data: {
       subject,
       requesterEmail: normalizeEmail(from),
-      category: TicketCategory.general_question,
       messages: {
         create: {
           direction: "inbound",
@@ -346,4 +579,5 @@ inboundEmailRouter.post("/", async (request, response) => {
   });
 
   response.status(201).json({ data: ticket });
+  void classifyTicketInBackground(ticket.id);
 });

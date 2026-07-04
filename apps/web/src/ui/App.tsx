@@ -32,6 +32,8 @@ import {
   Pencil,
   Search,
   ShieldCheck,
+  Sparkles,
+  TextSearch,
   Trash2,
   UserX
 } from "lucide-react";
@@ -51,7 +53,9 @@ import {
   getTicket,
   listTickets,
   listAssignableAgents,
+  polishTicketReply,
   replyToTicket,
+  summarizeTicketConversation,
   ticketCategories,
   ticketCategoryLabels,
   ticketStatusLabels,
@@ -760,6 +764,12 @@ function TicketDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ["tickets"] });
     }
   });
+  const polishReplyMutation = useMutation({
+    mutationFn: (body: string) => polishTicketReply(ticketId ?? "", body)
+  });
+  const summaryMutation = useMutation({
+    mutationFn: () => summarizeTicketConversation(ticketId ?? "")
+  });
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
@@ -797,16 +807,31 @@ function TicketDetailsPage() {
               "Unable to update assignment"
             )}
             isAgentsLoading={isAgentsLoading}
+            isPolishingReply={polishReplyMutation.isPending}
             isSavingTicket={assignTicketMutation.isPending}
             isSendingReply={replyMutation.isPending}
+            isSummarizingTicket={summaryMutation.isPending}
+            onPolishReply={(body) => polishReplyMutation.mutateAsync(body)}
             onReply={(body) => replyMutation.mutateAsync(body)}
+            onSummarizeTicket={() => summaryMutation.mutate()}
             onUpdateTicket={(payload) => assignTicketMutation.mutate(payload)}
             showAssignmentError={Boolean(assignTicketMutation.error ?? agentsError)}
+            showPolishError={Boolean(polishReplyMutation.error)}
             showReplyError={Boolean(replyMutation.error)}
+            showSummaryError={Boolean(summaryMutation.error)}
+            summary={summaryMutation.data ?? null}
+            summaryError={getErrorMessage(
+              summaryMutation.error,
+              "Unable to summarize ticket"
+            )}
             ticket={ticket}
             ticketUpdateError={getErrorMessage(
               assignTicketMutation.error ?? agentsError,
               "Unable to update ticket"
+            )}
+            polishError={getErrorMessage(
+              polishReplyMutation.error,
+              "Unable to polish reply"
             )}
             replyError={getErrorMessage(replyMutation.error, "Unable to send reply")}
           />
@@ -820,27 +845,45 @@ function TicketDetailsContent({
   agents,
   assignmentError,
   isAgentsLoading,
+  isPolishingReply,
   isSavingTicket,
   isSendingReply,
+  isSummarizingTicket,
+  onPolishReply,
   onReply,
+  onSummarizeTicket,
   onUpdateTicket,
   showAssignmentError,
+  showPolishError,
   showReplyError,
+  showSummaryError,
+  summary,
+  summaryError,
   ticket,
   ticketUpdateError,
+  polishError,
   replyError
 }: {
   agents: Array<{ id: string; name: string; email: string }>;
   assignmentError: string;
   isAgentsLoading: boolean;
+  isPolishingReply: boolean;
   isSavingTicket: boolean;
   isSendingReply: boolean;
+  isSummarizingTicket: boolean;
+  onPolishReply: (body: string) => Promise<string>;
   onReply: (body: string) => Promise<unknown>;
+  onSummarizeTicket: () => void;
   onUpdateTicket: (payload: TicketUpdatePayload) => void;
   showAssignmentError: boolean;
+  showPolishError: boolean;
   showReplyError: boolean;
+  showSummaryError: boolean;
+  summary: string | null;
+  summaryError: string;
   ticket: TicketDetails;
   ticketUpdateError: string;
+  polishError: string;
   replyError: string;
 }) {
   const [replyBody, setReplyBody] = useState("");
@@ -855,6 +898,17 @@ function TicketDetailsContent({
 
     await onReply(nextReply);
     setReplyBody("");
+  }
+
+  async function handlePolishReply() {
+    const nextReply = replyBody.trim();
+
+    if (!nextReply) {
+      return;
+    }
+
+    const polishedReply = await onPolishReply(nextReply);
+    setReplyBody(polishedReply);
   }
 
   return (
@@ -885,12 +939,37 @@ function TicketDetailsContent({
           </div>
         </CardHeader>
         <CardContent className="space-y-4 bg-white p-4">
-          <div>
-            <h2 className="text-base font-semibold">Reply thread</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Customer messages and support replies for this ticket.
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Reply thread</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Customer messages and support replies for this ticket.
+              </p>
+            </div>
+            <Button
+              disabled={isSummarizingTicket || ticket.messages.length === 0}
+              onClick={onSummarizeTicket}
+              type="button"
+              variant="outline"
+            >
+              <TextSearch className="mr-2 size-4" />
+              {isSummarizingTicket ? "Summarizing..." : "Summarize"}
+            </Button>
           </div>
+          {summary ? (
+            <section
+              aria-label="Ticket summary"
+              className="rounded-md border border-teal-200 bg-teal-50 p-4"
+            >
+              <h3 className="text-sm font-semibold text-teal-950">Summary</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-teal-900">
+                {summary}
+              </p>
+            </section>
+          ) : null}
+          {showSummaryError ? (
+            <p className="text-xs text-destructive">{summaryError}</p>
+          ) : null}
           {ticket.messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">No messages yet.</p>
           ) : (
@@ -933,8 +1012,31 @@ function TicketDetailsContent({
             {showReplyError ? (
               <p className="mt-2 text-xs text-destructive">{replyError}</p>
             ) : null}
-            <div className="mt-3 flex justify-end">
-              <Button disabled={isSendingReply || replyBody.trim().length === 0} type="submit">
+            {showPolishError ? (
+              <p className="mt-2 text-xs text-destructive">{polishError}</p>
+            ) : null}
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                disabled={
+                  isSendingReply ||
+                  isPolishingReply ||
+                  replyBody.trim().length === 0
+                }
+                onClick={handlePolishReply}
+                type="button"
+                variant="outline"
+              >
+                <Sparkles className="mr-2 size-4" />
+                {isPolishingReply ? "Polishing..." : "Polish"}
+              </Button>
+              <Button
+                disabled={
+                  isSendingReply ||
+                  isPolishingReply ||
+                  replyBody.trim().length === 0
+                }
+                type="submit"
+              >
                 {isSendingReply ? "Sending..." : "Send reply"}
               </Button>
             </div>

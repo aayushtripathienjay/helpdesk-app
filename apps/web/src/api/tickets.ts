@@ -157,3 +157,34 @@ export async function replyToTicket(ticketId: string, body: string) {
     throw new Error("Failed to send reply");
   }
 }
+
+export async function polishTicketReply(ticketId: string, body: string) {
+  try {
+    const response = await axios.post<{ data: { body: string } }>(
+      `/api/tickets/${ticketId}/polish-reply`,
+      { body }
+    );
+    return response.data.data.body;
+  } catch (error) {
+    if (axios.isAxiosError<{ error?: string }>(error) && error.response?.data.error) {
+      throw new Error(error.response.data.error);
+    }
+
+    throw new Error("Failed to polish reply");
+  }
+}
+
+export async function summarizeTicketConversation(ticketId: string) {
+  try {
+    const response = await axios.post<{ data: { summary: string } }>(
+      `/api/tickets/${ticketId}/summary`
+    );
+    return response.data.data.summary;
+  } catch (error) {
+    if (axios.isAxiosError<{ error?: string }>(error) && error.response?.data.error) {
+      throw new Error(error.response.data.error);
+    }
+
+    throw new Error("Failed to summarize ticket");
+  }
+}
