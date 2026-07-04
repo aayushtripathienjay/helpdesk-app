@@ -1,6 +1,22 @@
 import { app } from "./app";
 import { config } from "./config";
+import { startTicketQueues, stopTicketQueues } from "./queues/tickets";
 
-app.listen(config.port, () => {
+await startTicketQueues();
+
+const server = app.listen(config.port, () => {
   console.log(`API listening on http://localhost:${config.port}`);
+});
+
+async function shutdown() {
+  server.close();
+  await stopTicketQueues();
+}
+
+process.on("SIGINT", () => {
+  void shutdown().finally(() => process.exit(0));
+});
+
+process.on("SIGTERM", () => {
+  void shutdown().finally(() => process.exit(0));
 });

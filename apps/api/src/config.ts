@@ -28,6 +28,7 @@ const configuredWebOrigins = [
 const isProduction = process.env.NODE_ENV === "production";
 
 export const config = {
+  databaseUrl: process.env.DATABASE_URL ?? "",
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
   googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   inboundEmailToken:
