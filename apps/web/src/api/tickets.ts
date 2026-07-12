@@ -40,8 +40,15 @@ export type Ticket = {
   category: TicketCategory | null;
   assignedToId: string | null;
   assignedTo: AssignableAgent | null;
+  aiSuggestions?: TicketAiSuggestion[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type TicketAiSuggestion = {
+  id: string;
+  summary: string | null;
+  createdAt: string;
 };
 
 export type AssignableAgent = {

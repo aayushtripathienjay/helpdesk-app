@@ -35,6 +35,20 @@ const ticketSelect = {
       isActive: true
     }
   },
+  aiSuggestions: {
+    where: {
+      summary: {
+        startsWith: "Auto-resolved using KB article:"
+      }
+    },
+    orderBy: { createdAt: "asc" },
+    take: 1,
+    select: {
+      id: true,
+      summary: true,
+      createdAt: true
+    }
+  },
   createdAt: true,
   updatedAt: true
 } satisfies Prisma.TicketSelect;

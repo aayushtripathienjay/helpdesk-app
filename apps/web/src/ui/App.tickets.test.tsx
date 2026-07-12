@@ -93,6 +93,7 @@ const tickets: Ticket[] = [
     category: TicketCategoryValue.TechnicalQuestion,
     assignedToId: null,
     assignedTo: null,
+    aiSuggestions: [],
     createdAt: "2026-07-03T10:00:00.000Z",
     updatedAt: "2026-07-03T10:00:00.000Z"
   },
@@ -110,6 +111,13 @@ const tickets: Ticket[] = [
       role: "agent",
       isActive: true
     },
+    aiSuggestions: [
+      {
+        id: "ai-resolution-1",
+        summary: "Auto-resolved using KB article: Refund policy",
+        createdAt: "2026-07-04T10:30:00.000Z"
+      }
+    ],
     createdAt: "2026-07-03T09:00:00.000Z",
     updatedAt: "2026-07-03T09:00:00.000Z"
   },
@@ -121,6 +129,7 @@ const tickets: Ticket[] = [
     category: TicketCategoryValue.GeneralQuestion,
     assignedToId: null,
     assignedTo: null,
+    aiSuggestions: [],
     createdAt: "2026-07-03T08:00:00.000Z",
     updatedAt: "2026-07-03T08:00:00.000Z"
   }
@@ -159,6 +168,7 @@ function createTicket(index: number): Ticket {
           : TicketCategoryValue.TechnicalQuestion,
     assignedToId: null,
     assignedTo: null,
+    aiSuggestions: [],
     createdAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 6, 3, 12 - index)).toISOString()
   };
@@ -185,6 +195,8 @@ function renderAppAt(path: string) {
 
 describe("Tickets UI", () => {
   beforeEach(() => {
+    document.documentElement.classList.remove("dark");
+    window.localStorage.clear();
     vi.mocked(updateTicket).mockReset();
     vi.mocked(updateTicket).mockResolvedValue({
       ...ticketDetails,
@@ -239,6 +251,8 @@ describe("Tickets UI", () => {
   });
 
   test("dashboard has navbar access and clickable filtered scorecards", async () => {
+    const user = userEvent.setup();
+
     renderAppAt("/");
 
     expect(await screen.findByRole("heading", { name: "Ticket Dashboard" })).toBeVisible();
@@ -246,7 +260,7 @@ describe("Tickets UI", () => {
       "href",
       "/tickets"
     );
-    expect(await screen.findByRole("link", { name: /Total tickets/ })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /Total Tickets/ })).toHaveAttribute(
       "href",
       "/tickets"
     );
@@ -258,6 +272,17 @@ describe("Tickets UI", () => {
       "href",
       `/tickets?status=${TicketStatusValue.Resolved}`
     );
+    expect(screen.getByRole("link", { name: /Resolved by AI/ })).toHaveTextContent("1");
+    expect(screen.getByRole("link", { name: /AI Resolution Rate/ })).toHaveTextContent("100%");
+    expect(screen.getByRole("link", { name: /Avg Resolution Time/ })).toHaveTextContent("1d 1h");
+    expect(
+      screen.getByRole("img", {
+        name: "Total number of tickets per day over the past 30 days"
+      })
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Switch to dark view" }));
+    expect(document.documentElement).toHaveClass("dark");
+    expect(screen.getByRole("button", { name: "Switch to light view" })).toBeVisible();
     expect(screen.queryByText("View tickets")).not.toBeInTheDocument();
   });
 

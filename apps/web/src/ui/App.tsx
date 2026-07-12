@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  useEffect,
   useMemo,
   useState
 } from "react";
@@ -21,11 +22,15 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowUpDown,
+  Bot,
   ChevronLeft,
   ChevronRight,
+  CircleDot,
+  Clock3,
   Eye,
   EyeOff,
   Headphones,
+  LogOut,
   LockKeyhole,
   Mail,
   MoreHorizontal,
@@ -33,8 +38,10 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  TicketIcon,
   TextSearch,
   Trash2,
+  TrendingUp,
   UserX
 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -119,6 +126,10 @@ const queryKeys = {
 } as const;
 
 const pageSizeOptions = [10, 25, 50];
+const appShellClass =
+  "min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.18)_0,_transparent_34rem),linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]";
+const panelClass = "border-border bg-card text-card-foreground shadow-sm";
+type ThemeMode = "dark" | "light";
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address"),
@@ -179,6 +190,40 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function getInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const storedTheme = window.localStorage.getItem("helpdesk-theme");
+
+  if (storedTheme === "dark" || storedTheme === "light") {
+    return storedTheme;
+  }
+
+  return typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function useThemeMode() {
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("helpdesk-theme", theme);
+  }, [theme]);
+
+  return {
+    theme,
+    toggleTheme: () =>
+      setTheme((currentTheme) =>
+        currentTheme === "dark" ? "light" : "dark"
+      )
+  };
+}
+
 function readTicketStatusFilter(value: string | null): TicketStatus | "all" {
   return ticketStatuses.includes(value as TicketStatus)
     ? (value as TicketStatus)
@@ -212,6 +257,92 @@ function searchTickets(tickets: Ticket[], query: string) {
       category,
       assignee
     ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
+}
+
+function getAiResolution(ticket: Ticket) {
+  return ticket.aiSuggestions?.find((suggestion) =>
+    suggestion.summary?.startsWith("Auto-resolved using KB article:")
+  );
+}
+
+function formatPercent(numerator: number, denominator: number) {
+  if (denominator === 0) {
+    return "0%";
+  }
+
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function formatDuration(milliseconds: number | null) {
+  if (milliseconds === null) {
+    return "N/A";
+  }
+
+  const minutes = Math.max(1, Math.round(milliseconds / 60000));
+  const days = Math.floor(minutes / 1440);
+  const remainingMinutesAfterDays = minutes % 1440;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (days > 0) {
+    const remainingHours = Math.floor(remainingMinutesAfterDays / 60);
+
+    if (remainingHours === 0) {
+      return `${days}d`;
+    }
+
+    return `${days}d ${remainingHours}h`;
+  }
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+function getLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getTicketVolumeByDay(tickets: Ticket[]) {
+  const today = new Date();
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  const countsByDate = new Map<string, number>();
+
+  tickets.forEach((ticket) => {
+    const createdAt = new Date(ticket.createdAt);
+
+    if (!Number.isFinite(createdAt.getTime())) {
+      return;
+    }
+
+    const dateKey = getLocalDateKey(createdAt);
+    countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+  });
+
+  return Array.from({ length: 30 }, (_, index) => {
+    const date = new Date(startOfToday);
+    date.setDate(startOfToday.getDate() - (29 - index));
+
+    return {
+      date,
+      key: getLocalDateKey(date),
+      count: countsByDate.get(getLocalDateKey(date)) ?? 0
+    };
   });
 }
 
@@ -340,7 +471,7 @@ function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] px-4 py-8">
+    <main className={cn(appShellClass, "flex items-center justify-center px-4 py-8")}>
       <Card className="grid w-full max-w-5xl overflow-hidden border-slate-200 shadow-xl shadow-slate-900/10 lg:grid-cols-[1fr_420px]">
         <section className="flex min-h-72 flex-col justify-between bg-[#172026] p-6 text-white sm:p-8">
           <div>
@@ -507,9 +638,44 @@ function DashboardPage() {
         .length,
     [tickets]
   );
+  const aiResolvedTickets = useMemo(
+    () =>
+      tickets.filter(
+        (ticket) =>
+          ticket.status === TicketStatusValue.Resolved && getAiResolution(ticket)
+      ),
+    [tickets]
+  );
+  const averageAiResolutionTime = useMemo(() => {
+    const durations = aiResolvedTickets
+      .map((ticket) => {
+        const aiResolution = getAiResolution(ticket);
+
+        if (!aiResolution) {
+          return null;
+        }
+
+        const createdAt = new Date(ticket.createdAt).getTime();
+        const resolvedAt = new Date(aiResolution.createdAt).getTime();
+        const duration = resolvedAt - createdAt;
+
+        return Number.isFinite(duration) && duration >= 0 ? duration : null;
+      })
+      .filter((duration): duration is number => duration !== null);
+
+    if (durations.length === 0) {
+      return null;
+    }
+
+    return durations.reduce((total, duration) => total + duration, 0) / durations.length;
+  }, [aiResolvedTickets]);
+  const ticketVolumeByDay = useMemo(
+    () => getTicketVolumeByDay(tickets),
+    [tickets]
+  );
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+    <main className={appShellClass}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <Nav isAdmin={isAdminSession(session)} userName={user?.name ?? "User"} />
 
@@ -524,26 +690,45 @@ function DashboardPage() {
           </div>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric
             href="/tickets"
-            label="Total tickets"
+            icon={<TicketIcon className="size-3.5" />}
+            label="Total Tickets"
             loading={isLoading}
             value={tickets.length}
           />
           <Metric
             href={`/tickets?status=${TicketStatusValue.Open}`}
-            label="Open"
+            icon={<CircleDot className="size-3.5" />}
+            label="Open Tickets"
             loading={isLoading}
             value={openTickets}
           />
           <Metric
             href={`/tickets?status=${TicketStatusValue.Resolved}`}
-            label="Resolved"
+            icon={<Bot className="size-3.5" />}
+            label="Resolved by AI"
             loading={isLoading}
-            value={resolvedTickets}
+            value={aiResolvedTickets.length}
+          />
+          <Metric
+            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            icon={<TrendingUp className="size-3.5" />}
+            label="AI Resolution Rate"
+            loading={isLoading}
+            value={formatPercent(aiResolvedTickets.length, resolvedTickets)}
+          />
+          <Metric
+            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            icon={<Clock3 className="size-3.5" />}
+            label="Avg Resolution Time"
+            loading={isLoading}
+            value={formatDuration(averageAiResolutionTime)}
           />
         </section>
+
+        <TicketVolumeChart data={ticketVolumeByDay} loading={isLoading} />
       </div>
     </main>
   );
@@ -600,7 +785,7 @@ function TicketsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+    <main className={appShellClass}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <Nav isAdmin={isAdminSession(session)} userName={user?.name ?? "User"} />
 
@@ -642,8 +827,8 @@ function TicketsPage() {
           ))}
         </section>
 
-        <Card className="overflow-hidden border-slate-200 shadow-sm">
-          <CardHeader className="border-b bg-white px-4 py-4">
+        <Card className="overflow-hidden border-border bg-card shadow-sm">
+          <CardHeader className="border-b bg-card px-4 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle className="text-base">All tickets</CardTitle>
@@ -772,7 +957,7 @@ function TicketDetailsPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+    <main className={appShellClass}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         <Nav isAdmin={isAdminSession(session)} userName={user?.name ?? "User"} />
 
@@ -1329,7 +1514,7 @@ function UsersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)]">
+    <main className={appShellClass}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <Nav isAdmin userName={user?.name ?? "Admin"} />
 
@@ -1632,11 +1817,11 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
 
   return (
     <>
-      <div className="max-h-[62vh] overflow-auto bg-white">
+      <div className="max-h-[62vh] overflow-auto bg-card">
         <div className="min-w-[58rem]">
           {table.getHeaderGroups().map((headerGroup) => (
             <div
-              className="sticky top-0 z-10 grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-slate-50 px-4 py-2 shadow-sm"
+              className="sticky top-0 z-10 grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 border-b bg-muted px-4 py-2 shadow-sm"
               key={headerGroup.id}
             >
               {headerGroup.headers.map((header) => (
@@ -1650,18 +1835,18 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
               ))}
             </div>
           ))}
-          <div className="divide-y">
+          <div className="divide-y divide-border">
             {table.getRowModel().rows.map((row) => {
               const ticket = row.original;
 
               return (
                 <article
-                  className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 px-4 py-4 transition-colors hover:bg-slate-50"
+                  className="grid grid-cols-[minmax(16rem,1.5fr)_minmax(13rem,1fr)_9rem_12rem_11rem] gap-3 px-4 py-4 text-foreground transition-colors hover:bg-muted/70"
                   key={ticket.id}
                 >
                   <div className="min-w-0">
                     <Link
-                      className="block truncate font-medium text-slate-950 underline-offset-4 hover:text-teal-800 hover:underline focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2"
+                      className="block truncate font-medium text-foreground underline-offset-4 hover:text-teal-700 hover:underline focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 dark:hover:text-teal-300"
                       to={`/tickets/${ticket.id}`}
                     >
                       {ticket.subject}
@@ -1781,11 +1966,11 @@ function UserList({
 
   return (
     <>
-      <div className="max-h-[62vh] overflow-auto bg-white">
+      <div className="max-h-[62vh] overflow-auto bg-card">
         <div className="min-w-[58rem]">
           {table.getHeaderGroups().map((headerGroup) => (
             <div
-              className="sticky top-0 z-10 grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-slate-50 px-4 py-2 shadow-sm"
+              className="sticky top-0 z-10 grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] gap-3 border-b bg-muted px-4 py-2 shadow-sm"
               key={headerGroup.id}
             >
               {headerGroup.headers.map((header) => (
@@ -1802,13 +1987,13 @@ function UserList({
               </span>
             </div>
           ))}
-          <div className="divide-y">
+          <div className="divide-y divide-border">
             {table.getRowModel().rows.map((row) => {
               const teamMember = row.original;
 
               return (
                 <article
-                  className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] items-center gap-3 px-4 py-4"
+                  className="grid grid-cols-[minmax(12rem,1.1fr)_minmax(14rem,1.2fr)_8rem_8rem_9rem_3rem] items-center gap-3 px-4 py-4 text-foreground transition-colors hover:bg-muted/70"
                   key={teamMember.id}
                 >
                   <div className="min-w-0">
@@ -1935,20 +2120,23 @@ function PaginationControls({
   const lastItem = Math.min(totalItems, (pageIndex + 1) * pageSize);
 
   return (
-    <div className="flex flex-col gap-3 border-t bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-3 border-t bg-card px-4 py-3 text-card-foreground sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm font-medium text-muted-foreground">
         Showing {firstItem}-{lastItem} of {totalItems} {itemLabel}
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <Label className="text-sm text-muted-foreground" htmlFor={`${itemLabel}-page-size`}>
+          <Label className="text-sm font-medium text-muted-foreground" htmlFor={`${itemLabel}-page-size`}>
             Rows
           </Label>
           <Select
             onValueChange={(value) => onPageSizeChange(Number(value))}
             value={String(pageSize)}
           >
-            <SelectTrigger className="h-9 w-20" id={`${itemLabel}-page-size`}>
+            <SelectTrigger
+              className="h-9 w-20 border-border bg-background text-foreground shadow-sm dark:bg-slate-950"
+              id={`${itemLabel}-page-size`}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1960,7 +2148,7 @@ function PaginationControls({
             </SelectContent>
           </Select>
         </div>
-        <p className="min-w-24 text-sm text-muted-foreground">
+        <p className="min-w-24 text-sm font-medium text-muted-foreground">
           Page {pageCount === 0 ? 0 : pageIndex + 1} of {pageCount}
         </p>
         <div className="flex gap-2">
@@ -1971,6 +2159,7 @@ function PaginationControls({
             size="icon"
             type="button"
             variant="outline"
+            className="border-border bg-background text-foreground shadow-sm hover:bg-muted disabled:opacity-50 dark:bg-slate-950"
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -1981,6 +2170,7 @@ function PaginationControls({
             size="icon"
             type="button"
             variant="outline"
+            className="border-border bg-background text-foreground shadow-sm hover:bg-muted disabled:opacity-50 dark:bg-slate-950"
           >
             <ChevronRight className="size-4" />
           </Button>
@@ -2017,6 +2207,8 @@ function SortableHeader<TData>({
 function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   const navigate = useNavigate();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const { theme, toggleTheme } = useThemeMode();
+  const isDarkTheme = theme === "dark";
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -2033,47 +2225,72 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
   }
 
   return (
-    <nav className="sticky top-0 z-50 flex flex-col gap-4 border border-slate-800 bg-[#172026] px-4 py-3 text-white shadow-lg shadow-slate-900/15 sm:top-4 sm:rounded-lg sm:flex-row sm:items-center sm:justify-between">
-      <Link className="flex items-center gap-3 text-white" to="/">
-        <span className="grid size-10 place-items-center rounded-lg bg-teal-700 text-base font-semibold text-white shadow-sm ring-1 ring-white/15">
-          H
-        </span>
-        <span>
-          <span className="block text-lg font-semibold leading-5">Helpdesk</span>
-          <span className="mt-0.5 block text-xs font-medium uppercase tracking-wide text-teal-100/80">
-            Support console
+    <nav className="sticky top-0 z-50 flex flex-col gap-4 border border-slate-800 bg-[#172026]/95 px-4 py-3 text-white shadow-lg shadow-slate-900/15 backdrop-blur dark:border-white/10 dark:bg-slate-950/90 sm:top-4 sm:rounded-lg sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-4">
+        <Link className="flex items-center gap-3 text-white" to="/">
+          <span className="grid size-10 place-items-center rounded-lg bg-teal-700 text-base font-semibold text-white shadow-sm ring-1 ring-white/15">
+            H
           </span>
-        </span>
-      </Link>
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <Button
-          asChild
-          className="h-8 border-white/15 bg-white/10 px-3 text-sm text-white shadow-sm hover:bg-white/15 hover:text-white"
-          variant="outline"
-        >
-          <Link to="/tickets">Tickets</Link>
-        </Button>
-        {isAdmin ? (
+          <span>
+            <span className="block text-lg font-semibold leading-5">Helpdesk</span>
+            <span className="mt-0.5 block text-xs font-medium uppercase tracking-wide text-teal-100/80">
+              Support console
+            </span>
+          </span>
+        </Link>
+        <div className="h-6 w-px bg-white/15" aria-hidden="true" />
+        <div className="flex items-center gap-2">
           <Button
             asChild
-            className="h-8 border-white/15 bg-white/10 px-3 text-sm text-white shadow-sm hover:bg-white/15 hover:text-white"
-            variant="outline"
+            className="h-8 border-transparent bg-transparent px-2 text-xs text-slate-300 shadow-none hover:bg-white/10 hover:text-white"
+            variant="ghost"
           >
-            <Link to="/users">Users</Link>
+            <Link to="/tickets">Tickets</Link>
           </Button>
-        ) : null}
-        <Badge className="border-white/10 bg-white/10 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-white/10">
-          <span className="mr-2 inline-block size-2 rounded-full bg-emerald-300" />
-          {userName}
-        </Badge>
-        <Button
-          className="h-8 border-transparent bg-white px-3 text-sm text-[#172026] shadow-sm hover:bg-teal-50 hover:text-[#172026]"
-          disabled={isSigningOut}
-          onClick={handleSignOut}
-          type="button"
-        >
-          {isSigningOut ? "Signing out..." : "Sign out"}
-        </Button>
+          {isAdmin ? (
+            <Button
+              asChild
+              className="h-8 border-transparent bg-transparent px-2 text-xs text-slate-300 shadow-none hover:bg-white/10 hover:text-white"
+              variant="ghost"
+            >
+              <Link to="/users">Users</Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <div className="flex items-center gap-2">
+          <Button
+            aria-label={isDarkTheme ? "Switch to light view" : "Switch to dark view"}
+            className="size-8 border-transparent bg-transparent p-0 text-sm text-slate-300 shadow-none hover:bg-white/10 hover:text-white"
+            onClick={toggleTheme}
+            title={isDarkTheme ? "Light view" : "Dark view"}
+            type="button"
+            variant="ghost"
+          >
+            {isDarkTheme ? "☀️" : "🌙"}
+          </Button>
+          <Badge className="gap-1.5 border-transparent bg-transparent px-2 py-1 text-xs font-medium text-slate-300 shadow-none hover:bg-transparent">
+            {isAdmin ? (
+              <ShieldCheck className="size-3.5 text-slate-400" />
+            ) : (
+              <span className="size-1.5 rounded-full bg-slate-400" />
+            )}
+            <span className="max-w-40 truncate">
+              {isAdmin ? "Admin" : userName}
+            </span>
+          </Badge>
+          <Button
+            className="h-8 gap-1.5 border-transparent bg-transparent px-2 text-xs text-slate-300 shadow-none hover:bg-white/10 hover:text-white"
+            disabled={isSigningOut}
+            onClick={handleSignOut}
+            type="button"
+            variant="ghost"
+          >
+            <LogOut className="size-3.5" />
+            {isSigningOut ? "Signing out..." : "Sign out"}
+          </Button>
+        </div>
       </div>
     </nav>
   );
@@ -2082,33 +2299,132 @@ function Nav({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
 function Metric({
   active = false,
   href,
+  icon,
   label,
   loading = false,
   value
 }: {
   active?: boolean;
   href: string;
+  icon?: ReactNode;
   label: string;
   loading?: boolean;
-  value: number;
+  value: number | string;
 }) {
   return (
     <Link
       className={cn(
-        "block rounded-lg border bg-white text-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-teal-700/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2",
-        active && "border-teal-700 bg-teal-50"
+        "block rounded-lg border bg-card text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-teal-700/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 dark:border-white/10 dark:bg-[#161618] dark:shadow-black/20 dark:hover:border-white/20",
+        active && "border-teal-700 bg-teal-50 dark:border-teal-300/70 dark:bg-teal-950/50"
       )}
       to={href}
     >
-      <CardContent className="px-4 py-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-2 text-3xl font-semibold">
+      <CardContent className="flex min-h-28 flex-col justify-between px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[11px] font-medium text-muted-foreground">
+            {label}
+          </p>
+          {icon ? (
+            <span className="grid size-6 shrink-0 place-items-center rounded-md border bg-muted text-muted-foreground shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+              {icon}
+            </span>
+          ) : null}
+        </div>
+        <p className="text-2xl font-semibold tracking-tight text-foreground dark:text-slate-50">
           {loading ? "..." : value}
         </p>
       </CardContent>
     </Link>
+  );
+}
+
+function TicketVolumeChart({
+  data,
+  loading
+}: {
+  data: Array<{ count: number; date: Date; key: string }>;
+  loading: boolean;
+}) {
+  const maxCount = Math.max(...data.map((day) => day.count), 1);
+  const totalTickets = data.reduce((total, day) => total + day.count, 0);
+  const firstDay = data[0]?.date;
+  const lastDay = data[data.length - 1]?.date;
+  const dateRange =
+    firstDay && lastDay
+      ? `${firstDay.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric"
+        })} - ${lastDay.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric"
+        })}`
+      : "Past 30 days";
+
+  return (
+    <section className={cn("rounded-lg border p-4", panelClass, "dark:bg-slate-900/80")}>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">
+            Tickets per day
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Total ticket volume over the past 30 days.
+          </p>
+        </div>
+        <div className="text-left sm:text-right">
+          <p className="text-2xl font-semibold">
+            {loading ? "..." : totalTickets}
+          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {dateRange}
+          </p>
+        </div>
+      </div>
+
+      <div
+        aria-label="Total number of tickets per day over the past 30 days"
+        className="mt-6 flex h-56 items-stretch gap-1 border-b border-l border-border px-2 pb-2 pt-4"
+        role="img"
+      >
+        {data.map((day, index) => {
+          const height = day.count === 0 ? 4 : Math.max(10, (day.count / maxCount) * 100);
+          const label = day.date.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric"
+          });
+          const showDateLabel = index === 0 || index === data.length - 1;
+
+          return (
+            <div
+              className="group flex min-w-0 flex-1 flex-col items-center gap-2"
+              key={day.key}
+            >
+              <div className="relative flex min-h-0 w-full flex-1 items-end justify-center">
+                <div
+                  className="relative flex w-full max-w-5 justify-center"
+                  style={{ height: `${height}%` }}
+                >
+                  <div
+                    aria-label={`${label}: ${day.count} tickets`}
+                    className="h-full w-full rounded-t bg-teal-700 transition group-hover:bg-teal-900 dark:bg-teal-400 dark:group-hover:bg-teal-300"
+                    title={`${label}: ${day.count} tickets`}
+                  />
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 min-w-max -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg ring-1 ring-white/10 transition group-hover:opacity-100 dark:bg-white dark:text-slate-950">
+                    {day.count} {day.count === 1 ? "ticket" : "tickets"}
+                    <span className="ml-1 text-white/70 dark:text-slate-500">
+                      {label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <span className="h-4 text-[10px] font-medium text-muted-foreground">
+                {showDateLabel ? label : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -2203,7 +2519,7 @@ function UserListSkeleton() {
 
 function FullPageSkeleton() {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] px-4 py-6 sm:px-6 lg:px-8">
+    <main className={cn(appShellClass, "px-4 py-6 sm:px-6 lg:px-8")}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <div className="rounded-lg border border-slate-800 bg-[#172026] px-4 py-3 shadow-lg shadow-slate-900/10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

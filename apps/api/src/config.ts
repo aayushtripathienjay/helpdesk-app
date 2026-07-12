@@ -35,7 +35,7 @@ export const config = {
     process.env.INBOUND_EMAIL_TOKEN ??
     (isProduction ? undefined : "dev-inbound-email-token"),
   isProduction,
-  port: Number(process.env.API_PORT ?? 3000),
+  port: Number(process.env.PORT ?? process.env.API_PORT ?? 3000),
   supportEmail: process.env.SUPPORT_EMAIL ?? "support@example.com",
   webOrigins: Array.from(
     new Set([
