@@ -285,6 +285,15 @@ describe("Tickets UI", () => {
         name: "Total number of tickets per day over the past 30 days"
       })
     ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "15D" }));
+    expect(
+      screen.getByText("Total ticket intake over the selected 15-day window.")
+    ).toBeVisible();
+    expect(
+      screen.getByRole("img", {
+        name: "Total number of tickets per day over the past 15 days"
+      })
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Switch to dark view" }));
     expect(document.documentElement).toHaveClass("dark");
     expect(screen.getByRole("button", { name: "Switch to light view" })).toBeVisible();

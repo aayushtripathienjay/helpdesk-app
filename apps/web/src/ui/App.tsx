@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   Bot,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CircleDot,
@@ -126,10 +127,12 @@ const queryKeys = {
 } as const;
 
 const pageSizeOptions = [10, 25, 50];
+const dashboardRangeOptions = [7, 15, 30, 90] as const;
 const appShellClass =
   "min-h-screen bg-[radial-gradient(circle_at_top_left,_#d7f4ee_0,_transparent_34rem),linear-gradient(180deg,_#f8fbfb_0%,_#eef3f5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.18)_0,_transparent_34rem),linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]";
 const panelClass = "border-border bg-card text-card-foreground shadow-sm";
 type ThemeMode = "dark" | "light";
+type DashboardRangeDays = (typeof dashboardRangeOptions)[number];
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address"),
@@ -318,7 +321,7 @@ function getLocalDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getTicketVolumeByDay(tickets: Ticket[]) {
+function getTicketVolumeByDay(tickets: Ticket[], rangeDays: DashboardRangeDays) {
   const today = new Date();
   const startOfToday = new Date(
     today.getFullYear(),
@@ -326,6 +329,11 @@ function getTicketVolumeByDay(tickets: Ticket[]) {
     today.getDate()
   );
   const countsByDate = new Map<string, number>();
+  const firstVisibleDay = new Date(startOfToday);
+  firstVisibleDay.setDate(startOfToday.getDate() - (rangeDays - 1));
+  const previousRangeStart = new Date(firstVisibleDay);
+  previousRangeStart.setDate(firstVisibleDay.getDate() - rangeDays);
+  let previousTotal = 0;
 
   tickets.forEach((ticket) => {
     const createdAt = new Date(ticket.createdAt);
@@ -336,17 +344,61 @@ function getTicketVolumeByDay(tickets: Ticket[]) {
 
     const dateKey = getLocalDateKey(createdAt);
     countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+
+    if (createdAt >= previousRangeStart && createdAt < firstVisibleDay) {
+      previousTotal += 1;
+    }
   });
 
-  return Array.from({ length: 30 }, (_, index) => {
-    const date = new Date(startOfToday);
-    date.setDate(startOfToday.getDate() - (29 - index));
+  return {
+    days: Array.from({ length: rangeDays }, (_, index) => {
+      const date = new Date(startOfToday);
+      date.setDate(startOfToday.getDate() - (rangeDays - 1 - index));
 
-    return {
-      date,
-      key: getLocalDateKey(date),
-      count: countsByDate.get(getLocalDateKey(date)) ?? 0
-    };
+      return {
+        date,
+        key: getLocalDateKey(date),
+        count: countsByDate.get(getLocalDateKey(date)) ?? 0
+      };
+    }),
+    previousTotal
+  };
+}
+
+function getTicketStatusBreakdown(tickets: Ticket[]) {
+  return ticketStatuses.map((status) => ({
+    color:
+      status === TicketStatusValue.Open
+        ? "bg-amber-500"
+        : status === TicketStatusValue.Resolved
+          ? "bg-teal-600"
+          : "bg-slate-500",
+    label: ticketStatusLabels[status],
+    value: tickets.filter((ticket) => ticket.status === status).length
+  }));
+}
+
+function getTicketCategoryBreakdown(tickets: Ticket[]) {
+  return ticketCategories.map((category) => ({
+    label: ticketCategoryLabels[category],
+    value: tickets.filter((ticket) => ticket.category === category).length
+  }));
+}
+
+function getTicketsForRange(tickets: Ticket[], rangeDays: DashboardRangeDays) {
+  const today = new Date();
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  const firstVisibleDay = new Date(startOfToday);
+  firstVisibleDay.setDate(startOfToday.getDate() - (rangeDays - 1));
+
+  return tickets.filter((ticket) => {
+    const createdAt = new Date(ticket.createdAt);
+
+    return Number.isFinite(createdAt.getTime()) && createdAt >= firstVisibleDay;
   });
 }
 
@@ -623,6 +675,8 @@ function LoginPage() {
 function DashboardPage() {
   const { data: session } = authClient.useSession();
   const user = getSessionUser(session);
+  const [selectedRangeDays, setSelectedRangeDays] =
+    useState<DashboardRangeDays>(30);
   const {
     data: tickets = [],
     isLoading
@@ -674,8 +728,20 @@ function DashboardPage() {
     return durations.reduce((total, duration) => total + duration, 0) / durations.length;
   }, [aiResolvedTickets]);
   const ticketVolumeByDay = useMemo(
-    () => getTicketVolumeByDay(tickets),
-    [tickets]
+    () => getTicketVolumeByDay(tickets, selectedRangeDays),
+    [selectedRangeDays, tickets]
+  );
+  const ticketsInSelectedRange = useMemo(
+    () => getTicketsForRange(tickets, selectedRangeDays),
+    [selectedRangeDays, tickets]
+  );
+  const ticketStatusBreakdown = useMemo(
+    () => getTicketStatusBreakdown(ticketsInSelectedRange),
+    [ticketsInSelectedRange]
+  );
+  const ticketCategoryBreakdown = useMemo(
+    () => getTicketCategoryBreakdown(ticketsInSelectedRange),
+    [ticketsInSelectedRange]
   );
 
   return (
@@ -732,7 +798,29 @@ function DashboardPage() {
           />
         </section>
 
-        <TicketVolumeChart data={ticketVolumeByDay} loading={isLoading} />
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
+          <TicketVolumeChart
+            data={ticketVolumeByDay.days}
+            loading={isLoading}
+            onRangeChange={setSelectedRangeDays}
+            previousTotal={ticketVolumeByDay.previousTotal}
+            rangeDays={selectedRangeDays}
+          />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+            <TicketStatusChart
+              data={ticketStatusBreakdown}
+              loading={isLoading}
+              rangeDays={selectedRangeDays}
+              total={ticketsInSelectedRange.length}
+            />
+            <TicketCategoryChart
+              data={ticketCategoryBreakdown}
+              loading={isLoading}
+              rangeDays={selectedRangeDays}
+              total={ticketsInSelectedRange.length}
+            />
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -2355,13 +2443,31 @@ function Metric({
 
 function TicketVolumeChart({
   data,
-  loading
+  loading,
+  onRangeChange,
+  previousTotal,
+  rangeDays
 }: {
   data: Array<{ count: number; date: Date; key: string }>;
   loading: boolean;
+  onRangeChange: (rangeDays: DashboardRangeDays) => void;
+  previousTotal: number;
+  rangeDays: DashboardRangeDays;
 }) {
   const maxCount = Math.max(...data.map((day) => day.count), 1);
   const totalTickets = data.reduce((total, day) => total + day.count, 0);
+  const activeDays = data.filter((day) => day.count > 0).length;
+  const busiestDay = data.reduce(
+    (currentMax, day) => (day.count > currentMax.count ? day : currentMax),
+    data[0] ?? { count: 0, date: new Date(), key: "empty" }
+  );
+  const trendDelta = totalTickets - previousTotal;
+  const trendCopy =
+    trendDelta > 0
+      ? `+${trendDelta} vs previous ${rangeDays} days`
+      : trendDelta < 0
+        ? `${trendDelta} vs previous ${rangeDays} days`
+        : `Even with previous ${rangeDays} days`;
   const firstDay = data[0]?.date;
   const lastDay = data[data.length - 1]?.date;
   const dateRange =
@@ -2374,72 +2480,357 @@ function TicketVolumeChart({
           day: "numeric"
         })}`
       : "Past 30 days";
+  const linePoints = data.map((day, index) => {
+    const x = data.length > 1 ? (index / (data.length - 1)) * 100 : 0;
+    const y = 92 - (day.count / maxCount) * 76;
+
+    return { x, y };
+  });
+  const linePath = linePoints
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
+  const areaPath = linePoints.length
+    ? `${linePath} L 100 100 L 0 100 Z`
+    : "";
 
   return (
-    <section className={cn("rounded-lg border p-4", panelClass, "dark:bg-slate-900/80")}>
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight">
-            Tickets per day
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Total ticket volume over the past 30 days.
-          </p>
-        </div>
-        <div className="text-left sm:text-right">
-          <p className="text-2xl font-semibold">
-            {loading ? "..." : totalTickets}
-          </p>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {dateRange}
-          </p>
+    <section className="overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm dark:border-white/10 dark:bg-[#111827]">
+      <div className="border-b bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950 px-4 py-4 text-white sm:px-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-teal-100/75">
+              Executive volume
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+              Tickets per day
+            </h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Total ticket intake over the selected {rangeDays}-day window.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,23rem)] sm:items-start">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-4 text-teal-100/75" />
+              <div
+                aria-label="Select dashboard chart range"
+                className="flex rounded-md border border-white/10 bg-white/[0.07] p-1"
+                role="group"
+              >
+                {dashboardRangeOptions.map((rangeOption) => (
+                  <button
+                    aria-pressed={rangeDays === rangeOption}
+                    className={cn(
+                      "h-8 rounded px-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-teal-300",
+                      rangeDays === rangeOption &&
+                        "bg-white text-slate-950 shadow-sm hover:bg-white hover:text-slate-950"
+                    )}
+                    key={rangeOption}
+                    onClick={() => onRangeChange(rangeOption)}
+                    type="button"
+                  >
+                    {rangeOption}D
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-left">
+              <ChartStat label="Total" loading={loading} value={totalTickets} />
+              <ChartStat label="Active days" loading={loading} value={activeDays} />
+              <ChartStat label="Busiest day" loading={loading} value={busiestDay.count} />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div
-        aria-label="Total number of tickets per day over the past 30 days"
-        className="mt-6 flex h-56 items-stretch gap-1 border-b border-l border-border px-2 pb-2 pt-4"
-        role="img"
-      >
-        {data.map((day, index) => {
-          const height = day.count === 0 ? 4 : Math.max(10, (day.count / maxCount) * 100);
-          const label = day.date.toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric"
-          });
-          const showDateLabel = index === 0 || index === data.length - 1;
+      <div className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">{dateRange}</p>
+            <p className="text-xs text-muted-foreground">
+              {loading ? "Loading ticket velocity..." : trendCopy}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/5">
+            <span className="size-2 rounded-full bg-teal-500 shadow-[0_0_0_4px_rgba(20,184,166,0.14)]" />
+            Daily intake
+          </div>
+        </div>
 
-          return (
-            <div
-              className="group flex min-w-0 flex-1 flex-col items-center gap-2"
-              key={day.key}
-            >
-              <div className="relative flex min-h-0 w-full flex-1 items-end justify-center">
+        <div
+          aria-label={`Total number of tickets per day over the past ${rangeDays} days`}
+          className="relative mt-5 h-72 overflow-hidden rounded-lg border bg-[linear-gradient(180deg,_rgba(15,23,42,0.03),_transparent_45%),radial-gradient(circle_at_top_right,_rgba(20,184,166,0.14),_transparent_18rem)] p-3 dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(255,255,255,0.06),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(45,212,191,0.16),_transparent_18rem)]"
+          role="img"
+        >
+          <div className="pointer-events-none absolute inset-x-3 bottom-11 top-7 grid grid-rows-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span className="border-t border-border/70 dark:border-white/10" key={index} />
+            ))}
+          </div>
+
+          <svg
+            aria-hidden="true"
+            className="absolute inset-x-3 top-7 h-[calc(100%-4.5rem)] w-[calc(100%-1.5rem)] overflow-visible"
+            preserveAspectRatio="none"
+            viewBox="0 0 100 100"
+          >
+            <defs>
+              <linearGradient id="ticket-volume-fill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="rgb(20 184 166)" stopOpacity="0.26" />
+                <stop offset="100%" stopColor="rgb(20 184 166)" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+            {areaPath ? <path d={areaPath} fill="url(#ticket-volume-fill)" /> : null}
+            {linePath ? (
+              <path
+                d={linePath}
+                fill="none"
+                stroke="rgb(13 148 136)"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.4"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+          </svg>
+
+          <div className="absolute inset-x-3 bottom-10 top-7 flex items-end gap-1.5">
+            {data.map((day, index) => {
+              const height =
+                day.count === 0 ? 5 : Math.max(11, (day.count / maxCount) * 88);
+              const label = day.date.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric"
+              });
+              const showDateLabel = index === 0 || index === data.length - 1;
+
+              return (
                 <div
-                  className="relative flex w-full max-w-5 justify-center"
-                  style={{ height: `${height}%` }}
+                  className="group relative flex min-w-0 flex-1 flex-col items-center justify-end"
+                  key={day.key}
                 >
                   <div
                     aria-label={`${label}: ${day.count} tickets`}
-                    className="h-full w-full rounded-t bg-teal-700 transition group-hover:bg-teal-900 dark:bg-teal-400 dark:group-hover:bg-teal-300"
+                    className={cn(
+                      "w-full max-w-4 rounded-t-sm border border-teal-700/20 bg-teal-700/30 shadow-sm transition duration-200 group-hover:border-teal-700 group-hover:bg-teal-600 group-hover:shadow-md dark:border-teal-300/20 dark:bg-teal-300/25 dark:group-hover:bg-teal-300",
+                      day.count === 0 && "bg-slate-300/70 dark:bg-slate-700/70"
+                    )}
+                    style={{ height: `${height}%` }}
                     title={`${label}: ${day.count} tickets`}
                   />
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 min-w-max -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg ring-1 ring-white/10 transition group-hover:opacity-100 dark:bg-white dark:text-slate-950">
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-3 min-w-max -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg ring-1 ring-white/10 transition group-hover:opacity-100 dark:bg-white dark:text-slate-950">
                     {day.count} {day.count === 1 ? "ticket" : "tickets"}
                     <span className="ml-1 text-white/70 dark:text-slate-500">
                       {label}
                     </span>
                   </div>
+                  {showDateLabel ? (
+                    <span className="absolute top-full mt-3 text-[10px] font-medium text-muted-foreground">
+                      {label}
+                    </span>
+                  ) : null}
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ChartStat({
+  label,
+  loading,
+  value
+}: {
+  label: string;
+  loading: boolean;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-md border border-white/10 bg-white/[0.07] px-3 py-2 shadow-sm">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-300">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-semibold leading-none text-white">
+        {loading ? "..." : value}
+      </p>
+    </div>
+  );
+}
+
+function TicketStatusChart({
+  data,
+  loading,
+  rangeDays,
+  total
+}: {
+  data: Array<{ color: string; label: string; value: number }>;
+  loading: boolean;
+  rangeDays: DashboardRangeDays;
+  total: number;
+}) {
+  const openCount = data.find((item) => item.label === "Open")?.value ?? 0;
+  const resolvedCount = data.find((item) => item.label === "Resolved")?.value ?? 0;
+  const openDegrees = total > 0 ? (openCount / total) * 360 : 0;
+  const resolvedDegrees = total > 0 ? (resolvedCount / total) * 360 : 0;
+  const donutBackground =
+    total > 0
+      ? `conic-gradient(#f59e0b 0deg ${openDegrees}deg, #0d9488 ${openDegrees}deg ${
+          openDegrees + resolvedDegrees
+        }deg, #64748b ${openDegrees + resolvedDegrees}deg 360deg)`
+      : "conic-gradient(#cbd5e1 0deg 360deg)";
+
+  return (
+    <section className={cn("rounded-lg border p-4", panelClass, "dark:bg-[#111827]")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Queue health
+          </p>
+          <h2 className="mt-1 text-base font-semibold tracking-tight">
+            Status mix
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Last {rangeDays} days
+          </p>
+        </div>
+        <p className="text-2xl font-semibold tracking-tight">
+          {loading ? "..." : total}
+        </p>
+      </div>
+
+      <div className="mt-5 grid grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-4">
+        <div
+          aria-label="Ticket status breakdown"
+          className="relative grid aspect-square place-items-center rounded-full shadow-inner"
+          role="img"
+          style={{ background: donutBackground }}
+        >
+          <div className="grid size-[64%] place-items-center rounded-full border bg-card text-center shadow-sm dark:border-white/10 dark:bg-[#111827]">
+            <span className="text-xl font-semibold">{loading ? "..." : openCount}</span>
+            <span className="-mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Open
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {data.map((item) => (
+            <ChartLegendRow
+              color={item.color}
+              key={item.label}
+              label={item.label}
+              loading={loading}
+              total={total}
+              value={item.value}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TicketCategoryChart({
+  data,
+  loading,
+  rangeDays,
+  total
+}: {
+  data: Array<{ label: string; value: number }>;
+  loading: boolean;
+  rangeDays: DashboardRangeDays;
+  total: number;
+}) {
+  const sortedData = [...data].sort((left, right) => right.value - left.value);
+
+  return (
+    <section className={cn("rounded-lg border p-4", panelClass, "dark:bg-[#111827]")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Demand signal
+          </p>
+          <h2 className="mt-1 text-base font-semibold tracking-tight">
+            Category split
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Last {rangeDays} days
+          </p>
+        </div>
+        <Badge variant="secondary">{loading ? "..." : "Live"}</Badge>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        {sortedData.map((item, index) => {
+          const percent = total > 0 ? (item.value / total) * 100 : 0;
+          const barColor =
+            index === 0
+              ? "bg-teal-600 dark:bg-teal-400"
+              : index === 1
+                ? "bg-sky-600 dark:bg-sky-400"
+                : "bg-amber-500";
+
+          return (
+            <div className="space-y-2" key={item.label}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-medium">{item.label}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {loading ? "..." : `${item.value} (${Math.round(percent)}%)`}
+                </span>
               </div>
-              <span className="h-4 text-[10px] font-medium text-muted-foreground">
-                {showDateLabel ? label : ""}
-              </span>
+              <div className="h-2.5 overflow-hidden rounded-full bg-muted dark:bg-white/10">
+                <div
+                  className={cn("h-full rounded-full", barColor)}
+                  style={{
+                    width: `${loading ? 0 : Math.max(percent, item.value > 0 ? 7 : 0)}%`
+                  }}
+                />
+              </div>
             </div>
           );
         })}
       </div>
     </section>
+  );
+}
+
+function ChartLegendRow({
+  color,
+  label,
+  loading,
+  total,
+  value
+}: {
+  color: string;
+  label: string;
+  loading: boolean;
+  total: number;
+  value: number;
+}) {
+  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className={cn("size-2.5 shrink-0 rounded-full", color)} />
+          <span className="truncate font-medium">{label}</span>
+        </span>
+        <span className="shrink-0 text-muted-foreground">
+          {loading ? "..." : `${value} / ${percent}%`}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted dark:bg-white/10">
+        <div
+          className={cn("h-full rounded-full", color)}
+          style={{
+            width: `${loading ? 0 : Math.max(percent, value > 0 ? 7 : 0)}%`
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
