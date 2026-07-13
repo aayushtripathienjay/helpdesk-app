@@ -19,6 +19,7 @@ ENV NODE_ENV=production
 
 COPY --from=build /app/package.json /app/bun.lock ./
 COPY --from=build /app/apps/api/package.json apps/api/package.json
+COPY --from=build /app/apps/api/src apps/api/src
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/api/prisma apps/api/prisma
 COPY --from=build /app/apps/web/dist apps/web/dist

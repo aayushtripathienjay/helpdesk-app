@@ -13,7 +13,7 @@
     "build": "bun --filter '*' build",
     "start": "bun apps/api/dist/index.js",
     "railway:build": "bun run build",
-    "railway:start": "bun --filter @helpdesk/api db:deploy && bun run start",
+    "railway:start": "bun --filter @helpdesk/api db:deploy && bun apps/api/src/index.ts",
     "typecheck": "bun --filter '*' typecheck",
     "lint": "bun --filter '*' lint",
     "test:web": "bun --filter @helpdesk/web test",
