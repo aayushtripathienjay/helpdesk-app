@@ -14,6 +14,7 @@ import { userRoutes } from "./routes/users";
 export const app = express();
 const apiDistDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(apiDistDir, "../../web/dist");
+const shouldServeWebApp = config.isProduction && existsSync(webDistDir);
 
 app.use(
   cors({
@@ -26,19 +27,21 @@ app.all("/api/auth/{*authRoute}", toNodeHandler(auth));
 
 app.use(express.json());
 
-app.get("/", (_request, response) => {
-  response.json({
-    ok: true,
-    service: "helpdesk-api",
-    endpoints: {
-      health: "/api/health",
-      tickets: "/api/tickets",
-      inboundEmail: "/api/inbound-email",
-      users: "/api/users",
-      me: "/api/me"
-    }
+if (!shouldServeWebApp) {
+  app.get("/", (_request, response) => {
+    response.json({
+      ok: true,
+      service: "helpdesk-api",
+      endpoints: {
+        health: "/api/health",
+        tickets: "/api/tickets",
+        inboundEmail: "/api/inbound-email",
+        users: "/api/users",
+        me: "/api/me"
+      }
+    });
   });
-});
+}
 
 app.use("/health", healthRouter);
 app.use("/tickets", requireAuth, ticketsRouter);
@@ -47,7 +50,7 @@ app.use("/api/inbound-email", inboundEmailRouter);
 app.use("/api/tickets", requireAuth, ticketsRouter);
 app.use(userRoutes);
 
-if (config.isProduction && existsSync(webDistDir)) {
+if (shouldServeWebApp) {
   app.use(express.static(webDistDir));
 
   app.get("{*spaRoute}", (request, response, next) => {

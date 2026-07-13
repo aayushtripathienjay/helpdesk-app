@@ -4,7 +4,7 @@ import { startTicketQueues, stopTicketQueues } from "./queues/tickets";
 
 await startTicketQueues();
 
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, "0.0.0.0", () => {
   console.log(`API listening on http://localhost:${config.port}`);
 });
 

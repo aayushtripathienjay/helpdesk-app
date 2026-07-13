@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "bun run railway:build"
+
+[deploy]
+startCommand = "bun run railway:start"
+healthcheckPath = "/api/health"
+restartPolicyType = "ON_FAILURE"

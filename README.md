@@ -128,8 +128,34 @@ The main local variables are defined in `.env.example`:
 - `ALLOW_INSECURE_BOOTSTRAP_PASSWORD` - optional local-only override for weak seed passwords
 - `ADMIN_NAME` - seeded admin name
 - `API_PORT` - Express API port
+- `PORT` - production HTTP port, supplied automatically by Railway
 - `WEB_ORIGIN` - allowed frontend origin
 - `WEB_ORIGINS` - optional comma-separated allowed frontend origins
+
+## Railway Deployment
+
+This repo includes `railway.toml` for a single Railway web service. Railway runs
+`bun run railway:build`, then starts the app with `bun run railway:start`.
+The start command applies Prisma migrations with `prisma migrate deploy` before
+starting the compiled API server.
+
+Add a Railway PostgreSQL database and set these variables on the web service:
+
+- `DATABASE_URL` - use the Railway Postgres connection string
+- `NODE_ENV=production`
+- `BETTER_AUTH_SECRET` - strong random secret
+- `BETTER_AUTH_URL` - deployed app URL, for example `https://your-app.up.railway.app`
+- `WEB_ORIGIN` - same deployed app URL
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME` - used when seeding the first admin
+- `GOOGLE_GENERATIVE_AI_API_KEY` - optional, required for AI classification and reply features
+- `INBOUND_EMAIL_TOKEN` - required in production if inbound email ingestion is used
+
+After the first deploy, seed the initial admin from a Railway shell or one-off
+command:
+
+```sh
+bun --filter @helpdesk/api db:seed
+```
 
 ## Frontend API Pattern
 

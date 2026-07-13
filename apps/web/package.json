@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "/home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js --host 0.0.0.0",
-    "build": "tsc -b && /home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js build",
-    "preview": "/home/enjay/.nvm/versions/node/v22.23.1/bin/node ../../node_modules/.bun/vite@6.4.3+5e3c66d3095ae211/node_modules/vite/bin/vite.js preview --host 0.0.0.0",
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --noEmit",
