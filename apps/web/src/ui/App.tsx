@@ -236,6 +236,10 @@ function readTicketCategoryFilter(value: string | null): TicketCategory | "all" 
     : "all";
 }
 
+function readBooleanFilter(value: string | null) {
+  return value === "true";
+}
+
 function searchTickets(tickets: Ticket[], query: string) {
   const normalizedQuery = query.trim().toLowerCase();
 
@@ -706,21 +710,21 @@ function DashboardPage() {
             value={openTickets}
           />
           <Metric
-            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            href={`/tickets?status=${TicketStatusValue.Resolved}&aiResolved=true`}
             icon={<Bot className="size-3.5" />}
             label="Resolved by AI"
             loading={isLoading}
             value={aiResolvedTickets.length}
           />
           <Metric
-            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            href={`/tickets?status=${TicketStatusValue.Resolved}&aiResolved=true`}
             icon={<TrendingUp className="size-3.5" />}
             label="AI Resolution Rate"
             loading={isLoading}
             value={formatPercent(aiResolvedTickets.length, resolvedTickets)}
           />
           <Metric
-            href={`/tickets?status=${TicketStatusValue.Resolved}`}
+            href={`/tickets?status=${TicketStatusValue.Resolved}&aiResolved=true`}
             icon={<Clock3 className="size-3.5" />}
             label="Avg Resolution Time"
             loading={isLoading}
@@ -741,7 +745,8 @@ function TicketsPage() {
   const [ticketSearch, setTicketSearch] = useState("");
   const status = readTicketStatusFilter(searchParams.get("status"));
   const category = readTicketCategoryFilter(searchParams.get("category"));
-  const filters = { category, status };
+  const aiResolved = readBooleanFilter(searchParams.get("aiResolved"));
+  const filters = { aiResolved, category, status };
   const {
     data: tickets = [],
     error,
@@ -768,6 +773,10 @@ function TicketsPage() {
       nextParams.set(key, value);
     }
 
+    if (key === "status" && value !== TicketStatusValue.Resolved) {
+      nextParams.delete("aiResolved");
+    }
+
     setSearchParams(nextParams);
   }
 
@@ -776,8 +785,13 @@ function TicketsPage() {
 
     if (nextStatus === "all") {
       nextParams.delete("status");
+      nextParams.delete("aiResolved");
     } else {
       nextParams.set("status", nextStatus);
+
+      if (nextStatus !== TicketStatusValue.Resolved) {
+        nextParams.delete("aiResolved");
+      }
     }
 
     const query = nextParams.toString();
@@ -834,6 +848,7 @@ function TicketsPage() {
                 <CardTitle className="text-base">All tickets</CardTitle>
                 <CardDescription>
                   Newest first. {visibleSearchedOpenTickets} open in the current view.
+                  {aiResolved ? " Showing AI-resolved tickets only." : ""}
                 </CardDescription>
               </div>
               <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[44rem]">
@@ -1098,8 +1113,8 @@ function TicketDetailsContent({
 
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-white px-4 py-4">
+      <Card className="overflow-hidden border-border bg-card text-card-foreground shadow-sm">
+        <CardHeader className="border-b bg-card px-4 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <CardTitle className="text-xl leading-7">{ticket.subject}</CardTitle>
@@ -1123,7 +1138,7 @@ function TicketDetailsContent({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4 bg-white p-4">
+        <CardContent className="space-y-4 bg-card p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Reply thread</h2>
@@ -1160,7 +1175,7 @@ function TicketDetailsContent({
           ) : (
             ticket.messages.map((message) => (
               <article
-                className="rounded-md border border-slate-200 bg-slate-50 p-4"
+                className="rounded-md border bg-muted/45 p-4"
                 key={message.id}
               >
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -1178,16 +1193,16 @@ function TicketDetailsContent({
                     {new Date(message.createdAt).toLocaleString()}
                   </p>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
                   {message.body}
                 </p>
               </article>
             ))
           )}
-          <form className="rounded-md border border-slate-200 bg-white p-4" onSubmit={handleReplySubmit}>
+          <form className="rounded-md border bg-card p-4" onSubmit={handleReplySubmit}>
             <Label htmlFor="ticket-reply">Reply</Label>
             <textarea
-              className="mt-2 min-h-32 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 min-h-32 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isSendingReply}
               id="ticket-reply"
               onChange={(event) => setReplyBody(event.target.value)}
@@ -1229,11 +1244,11 @@ function TicketDetailsContent({
         </CardContent>
       </Card>
 
-      <Card className="h-fit border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-white px-4 py-4">
+      <Card className="h-fit border-border bg-card text-card-foreground shadow-sm">
+        <CardHeader className="border-b bg-card px-4 py-4">
           <CardTitle className="text-base">Properties</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 bg-white p-4 text-sm">
+        <CardContent className="grid gap-4 bg-card p-4 text-sm">
           <div className="space-y-2">
             <Label htmlFor="ticket-assignee">Assigned to</Label>
             <Select
@@ -1332,7 +1347,7 @@ function TicketProperty({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <p className="mt-1 break-words text-slate-900">{value}</p>
+      <p className="mt-1 break-words text-foreground">{value}</p>
     </div>
   );
 }
@@ -2457,14 +2472,14 @@ function TicketListSkeleton() {
 function TicketDetailsSkeleton() {
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-white px-4 py-4">
+      <Card className="overflow-hidden border-border bg-card text-card-foreground shadow-sm">
+        <CardHeader className="border-b bg-card px-4 py-4">
           <Skeleton className="h-7 w-3/4 max-w-2xl" />
           <Skeleton className="mt-3 h-4 w-64" />
         </CardHeader>
-        <CardContent className="space-y-4 bg-white p-4">
+        <CardContent className="space-y-4 bg-card p-4">
           {Array.from({ length: 2 }).map((_, index) => (
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-4" key={index}>
+            <div className="rounded-md border bg-muted/45 p-4" key={index}>
               <div className="flex justify-between gap-3">
                 <Skeleton className="h-6 w-44" />
                 <Skeleton className="h-4 w-32" />
@@ -2475,11 +2490,11 @@ function TicketDetailsSkeleton() {
           ))}
         </CardContent>
       </Card>
-      <Card className="h-fit border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-white px-4 py-4">
+      <Card className="h-fit border-border bg-card text-card-foreground shadow-sm">
+        <CardHeader className="border-b bg-card px-4 py-4">
           <Skeleton className="h-5 w-24" />
         </CardHeader>
-        <CardContent className="space-y-4 bg-white p-4">
+        <CardContent className="space-y-4 bg-card p-4">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />

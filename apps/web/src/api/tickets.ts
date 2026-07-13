@@ -73,6 +73,7 @@ export type TicketDetails = Ticket & {
 };
 
 export type TicketFilters = {
+  aiResolved?: boolean;
   category?: TicketCategory | "all";
   status?: TicketStatus | "all";
 };
@@ -87,6 +88,10 @@ export async function listTickets(filters: TicketFilters = {}): Promise<Ticket[]
 
     if (filters.category && filters.category !== "all") {
       params.set("category", filters.category);
+    }
+
+    if (filters.aiResolved) {
+      params.set("aiResolved", "true");
     }
 
     const response = await axios.get<{ data: Ticket[] }>("/api/tickets", {

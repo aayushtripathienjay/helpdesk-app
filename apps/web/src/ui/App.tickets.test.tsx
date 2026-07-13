@@ -182,8 +182,13 @@ function filterTickets(filters: TicketFilters = {}) {
       !filters.category ||
       filters.category === "all" ||
       ticket.category === filters.category;
+    const matchesAiResolved =
+      !filters.aiResolved ||
+      ticket.aiSuggestions?.some((suggestion) =>
+        suggestion.summary?.startsWith("Auto-resolved using KB article:")
+      );
 
-    return matchesStatus && matchesCategory;
+    return matchesStatus && matchesCategory && matchesAiResolved;
   });
 }
 
@@ -268,9 +273,9 @@ describe("Tickets UI", () => {
       "href",
       `/tickets?status=${TicketStatusValue.Open}`
     );
-    expect(screen.getByRole("link", { name: /Resolved/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Resolved by AI/ })).toHaveAttribute(
       "href",
-      `/tickets?status=${TicketStatusValue.Resolved}`
+      `/tickets?status=${TicketStatusValue.Resolved}&aiResolved=true`
     );
     expect(screen.getByRole("link", { name: /Resolved by AI/ })).toHaveTextContent("1");
     expect(screen.getByRole("link", { name: /AI Resolution Rate/ })).toHaveTextContent("100%");
@@ -460,6 +465,7 @@ describe("Tickets UI", () => {
 
     await waitFor(() => {
       expect(vi.mocked(listTickets)).toHaveBeenLastCalledWith({
+        aiResolved: false,
         category: "all",
         status: TicketStatusValue.Resolved
       });
@@ -467,6 +473,25 @@ describe("Tickets UI", () => {
     const ticketRows = await screen.findAllByRole("article");
     expect(ticketRows).toHaveLength(1);
     expect(within(ticketRows[0]).getByText("Refund request for course purchase")).toBeVisible();
+  });
+
+  test("AI resolved dashboard link narrows the ticket list to AI-resolved tickets", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/");
+
+    await user.click(await screen.findByRole("link", { name: /Resolved by AI/ }));
+
+    await waitFor(() => {
+      expect(vi.mocked(listTickets)).toHaveBeenLastCalledWith({
+        aiResolved: true,
+        category: "all",
+        status: TicketStatusValue.Resolved
+      });
+    });
+    expect(screen.getByText(/Showing AI-resolved tickets only/)).toBeVisible();
+    const ticketRows = await screen.findAllByRole("article");
+    expect(ticketRows).toHaveLength(1);
+    expect(ticketRows[0]).toHaveTextContent("Refund request for course purchase");
   });
 
   test("category filter narrows the ticket list", async () => {
@@ -479,6 +504,7 @@ describe("Tickets UI", () => {
 
     await waitFor(() => {
       expect(vi.mocked(listTickets)).toHaveBeenLastCalledWith({
+        aiResolved: false,
         category: TicketCategoryValue.RefundRequest,
         status: "all"
       });

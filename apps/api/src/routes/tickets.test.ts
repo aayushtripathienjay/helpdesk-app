@@ -100,6 +100,25 @@ test("filters tickets by category query", async () => {
   );
 });
 
+test("filters tickets by AI resolution query", async () => {
+  await apiRequest("/?status=resolved&aiResolved=true");
+
+  expect(prismaMock.ticket.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        aiSuggestions: {
+          some: {
+            summary: {
+              startsWith: "Auto-resolved using KB article:"
+            }
+          }
+        },
+        status: TicketStatus.resolved
+      }
+    })
+  );
+});
+
 test("ignores unknown ticket filter values", async () => {
   await apiRequest("/?status=waiting&category=unknown");
 

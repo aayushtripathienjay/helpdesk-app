@@ -122,12 +122,28 @@ function readTicketCategory(value: unknown) {
     : undefined;
 }
 
+function readBoolean(value: unknown) {
+  return value === "true" || value === true;
+}
+
 ticketsRouter.get("/", async (request, response) => {
   const status = readTicketStatus(request.query.status);
   const category = readTicketCategory(request.query.category);
+  const aiResolved = readBoolean(request.query.aiResolved);
   const where: Prisma.TicketWhereInput = {
     ...(status ? { status } : {}),
-    ...(category ? { category } : {})
+    ...(category ? { category } : {}),
+    ...(aiResolved
+      ? {
+          aiSuggestions: {
+            some: {
+              summary: {
+                startsWith: "Auto-resolved using KB article:"
+              }
+            }
+          }
+        }
+      : {})
   };
   const tickets = await prisma.ticket.findMany({
     where,
